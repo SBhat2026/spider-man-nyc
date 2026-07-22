@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Spider-Man: NYC</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; background: #000; height: 100%;
+               font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; }
+  #game { position: fixed; inset: 0; }
+  #noirfx { position: fixed; inset: 0; z-index: 2; pointer-events: none; display: none;
+            box-shadow: inset 0 0 220px 60px rgba(0,0,0,0.75);
+            background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/></filter><rect width='120' height='120' filter='url(%23n)' opacity='0.5'/></svg>");
+            mix-blend-mode: overlay; opacity: 0.14; }
+  #noirfx.on { display: block; animation: grain 0.5s steps(3) infinite; }
+  @keyframes grain { 0%{background-position:0 0} 33%{background-position:-40px 20px} 66%{background-position:30px -30px} 100%{background-position:0 0} }
+  canvas { display: block; }
+
+  /* ---------- HUD ---------- */
+  #hud { position: fixed; inset: 0; pointer-events: none; color: #fff; }
+  #speed { position: absolute; right: 18px; bottom: 14px; font-size: 13px;
+           letter-spacing: .12em; opacity: .75; text-shadow: 0 1px 3px rgba(0,0,0,.8); }
+  #zonename { position: absolute; left: 18px; bottom: 14px; font-size: 13px;
+              letter-spacing: .18em; text-transform: uppercase; opacity: .7;
+              text-shadow: 0 1px 3px rgba(0,0,0,.8); }
+  #hint { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%);
+          font-size: 13px; opacity: .8; text-shadow: 0 1px 4px rgba(0,0,0,.9);
+          background: rgba(0,0,0,.28); padding: 6px 14px; border-radius: 20px;
+          transition: opacity 1s; white-space: nowrap; }
+  #hint.fade { opacity: 0; }
+  #photolabel { position: fixed; left: 50%; top: 22px; transform: translateX(-50%);
+                color: #fff; font-size: 12px; letter-spacing: .3em; text-transform: uppercase;
+                background: rgba(0,0,0,.35); padding: 7px 16px; border-radius: 20px;
+                display: none; z-index: 5; text-shadow: 0 1px 3px rgba(0,0,0,.8); }
+
+  /* ---------- Menu ---------- */
+  #menu { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+          background: radial-gradient(ellipse at 50% 110%, #4a1a08 0%, #1b0b1e 55%, #07060f 100%);
+          z-index: 10; }
+  #menu .panel { text-align: center; color: #fff; max-width: 640px; padding: 24px; }
+  #menu h1 { font-size: 46px; margin: 0 0 4px; letter-spacing: .06em; font-weight: 800;
+             background: linear-gradient(180deg, #ffd9a0, #ff5f3c 60%, #c22f4e);
+             -webkit-background-clip: text; background-clip: text; color: transparent; }
+  #menu h2 { font-size: 13px; letter-spacing: .5em; font-weight: 400; margin: 0 0 34px;
+             opacity: .65; text-transform: uppercase; }
+  .optrow { margin: 14px 0; }
+  .optrow .lbl { display: block; font-size: 11px; letter-spacing: .3em; text-transform: uppercase;
+                 opacity: .55; margin-bottom: 8px; }
+  .optrow button { pointer-events: auto; background: rgba(255,255,255,.07); color: #eee;
+                   border: 1px solid rgba(255,255,255,.18); padding: 9px 18px; margin: 0 5px;
+                   border-radius: 8px; font-size: 14px; cursor: pointer; transition: all .15s; }
+  .optrow button:hover { background: rgba(255,255,255,.16); }
+  .optrow button.sel { background: #ff5f3c; border-color: #ff8a5c; color: #fff; font-weight: 600; }
+  #startBtn { margin-top: 30px; font-size: 18px; padding: 14px 52px; border-radius: 12px;
+              background: linear-gradient(180deg, #ff7a4d, #d3303f); border: none; color: #fff;
+              font-weight: 700; letter-spacing: .08em; cursor: pointer; pointer-events: auto; }
+  #startBtn:hover { filter: brightness(1.15); }
+  #optSkin button.locked { opacity: .45; cursor: help; }
+  #unlockHint { min-height: 18px; margin-top: 6px; font-size: 12.5px; color: #ffd07a; opacity: .9; }
+  #controls { margin-top: 26px; font-size: 12.5px; line-height: 1.9; opacity: .6; }
+  #controls b { color: #ffb894; font-weight: 600; }
+  #loadmsg { margin-top: 18px; font-size: 12px; opacity: .5; }
+</style>
+</head>
+<body>
+<div id="game"></div>
+<div id="noirfx"></div>
+
+<div id="photolabel">Photo Mode &nbsp;·&nbsp; WASD fly &nbsp;·&nbsp; SPACE up / C down &nbsp;·&nbsp; ENTER snap &nbsp;·&nbsp; P resume<br><span id="phototask" style="opacity:.8;font-size:11px;letter-spacing:.12em"></span></div>
+<div id="hud">
+  <div id="zonename"></div>
+  <div id="speed"></div>
+  <div id="hint"></div>
+</div>
+
+<div id="menu">
+  <div class="panel">
+    <h1>Spider-Man</h1>
+    <h2>New York City</h2>
+    <div class="optrow" id="optZone">
+      <span class="lbl">District — real NYC street plan</span>
+      <button data-v="midtown" class="sel">Manhattan + Central Park</button>
+      <button data-v="fidi">Financial District</button>
+    </div>
+    <div class="optrow" id="optTime">
+      <span class="lbl">Time of day</span>
+      <button data-v="sunset" class="sel">Dramatic Sunset</button>
+      <button data-v="night">Times Square Night</button>
+      <button data-v="day">Bright Daylight</button>
+      <button data-v="cycle">Day Cycle</button>
+    </div>
+    <div class="optrow" id="optSkin">
+      <span class="lbl">Suit</span>
+      <button data-v="classic" class="sel">Stark</button>
+      <button data-v="black">Symbiote</button>
+      <button data-v="iron">Iron Spider</button>
+      <button data-v="miles">Miles Morales</button>
+      <button data-v="y2099">2099</button>
+      <button data-v="tasm">Amazing</button>
+      <button data-v="upgraded">Upgraded</button>
+      <button data-v="noir">Noir</button>
+    </div>
+    <div id="unlockHint"></div>
+    <button id="startBtn">SWING</button>
+    <div id="controls">
+      <b>Trackpad / Mouse</b> look &nbsp;·&nbsp; <b>Hold SPACE</b> web swing, release at the arc top &nbsp;·&nbsp;
+      <b>W / S</b> reel rope in / out &nbsp;·&nbsp; <b>A D</b> lean &nbsp;·&nbsp; <b>F</b>+dir tricks (W swan · S double · A/D corkscrew) / <b>Q</b> roll / <b>E</b> spread (<b>W+E</b> superman)<br>
+      Touch a wall mid-air to <b>crawl</b> (WASD), <b>SPACE</b> leaps off, <b>C</b> near the top to hang upside-down &nbsp;·&nbsp;
+      Skim a wall at speed to <b>wall-run</b>, <b>SPACE</b> bounces off &nbsp;·&nbsp; <b>hold K</b> web-wings glide (Stark) &nbsp;·&nbsp; <b>SHIFT</b> sprint &nbsp;·&nbsp; <b>P</b> photo mode<br>
+      <b>SPACE</b> jumps &nbsp;·&nbsp; <b>T</b> time of day &nbsp;·&nbsp; <b>F/Q/E</b> flip / roll / spread &nbsp;·&nbsp; <b>.</b> big map &nbsp;·&nbsp; <b>N</b> next suit &nbsp;·&nbsp; <b>M</b> mute &nbsp;·&nbsp; <b>R</b> respawn &nbsp;·&nbsp; <b>ESC</b> menu
+    </div>
+    <div id="loadmsg">Real building footprints &amp; streets © OpenStreetMap contributors</div>
+  </div>
+</div>
+
+<script src="lib/three.min.js?v=88"></script>
+<script src="data/city_midtown.js?v=88"></script>
+<script src="data/city_fidi.js?v=88"></script>
+<script src="src/config.js?v=88"></script>
+<script src="src/cityplan.js?v=88"></script>
+<script src="src/cloak.js?v=88"></script>
+<script src="src/comicfx.js?v=88"></script>
+<script src="src/crowds.js?v=88"></script>
+<script src="src/events.js?v=88"></script>
+<script src="src/photos.js?v=88"></script>
+<script src="src/districts.js?v=88"></script>
+<script src="src/unlocks.js?v=88"></script>
+<script src="src/city.js?v=88"></script>
+<script src="src/lighting.js?v=88"></script>
+<script src="src/hero.js?v=88"></script>
+<script src="src/traffic.js?v=88"></script>
+<script src="src/landmarks.js?v=88"></script>
+<script src="src/minimap.js?v=88"></script>
+<script src="src/pigeons.js?v=88"></script>
+<script src="src/audio.js?v=88"></script>
+<script src="src/player.js?v=88"></script>
+<script src="src/main.js?v=88"></script>
+</body>
+</html>

@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>City Inspector — Spider-Man: NYC</title>
+<style>
+  html,body{margin:0;background:#0b0d12;color:#dfe3ea;font:13px/1.5 -apple-system,Arial,sans-serif;overflow:hidden}
+  #wrap{position:fixed;inset:0}
+  canvas{position:absolute;inset:0;cursor:crosshair}
+  #hud{position:fixed;top:10px;left:10px;background:rgba(12,14,20,.82);padding:10px 12px;
+       border:1px solid #2a2f3a;border-radius:8px;max-width:280px;z-index:5}
+  #hud h3{margin:0 0 6px;font-size:13px;color:#ffb894}
+  label{display:block;margin:3px 0;cursor:pointer;user-select:none}
+  #stats{margin-top:8px;padding-top:8px;border-top:1px solid #2a2f3a;font-size:12px;color:#9aa2b0}
+  b.bad{color:#ff5a4a}b.ok{color:#4ade5a}
+  #tip{position:fixed;bottom:10px;left:10px;color:#7a828f;font-size:11px}
+  kbd{background:#20242e;border:1px solid #333;border-radius:4px;padding:1px 5px}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+<div id="hud">
+  <h3>City Inspector</h3>
+  <label><input type="checkbox" id="tRoad" checked> roads (asphalt + width)</label>
+  <label><input type="checkbox" id="tWalk" checked> sidewalks</label>
+  <label><input type="checkbox" id="tBldg" checked> building footprints</label>
+  <label><input type="checkbox" id="tGrid" checked> sector grid</label>
+  <label><input type="checkbox" id="tLights" checked> traffic lights (corners)</label>
+  <label><input type="checkbox" id="tBlades" checked> street-name blades</label>
+  <label><input type="checkbox" id="tProblems" checked> flag furniture in roadway</label>
+  <div id="stats"></div>
+</div>
+<div id="tip">drag to pan · scroll to zoom · <kbd>1</kbd>–<kbd>4</kbd> jump to sector row · furniture dots: <b class="ok">green ok</b> / <b class="bad">red = in road</b></div>
+
+<script src="../data/city_midtown.js"></script>
+<script src="../src/config.js"></script>
+<script src="../src/cityplan.js"></script>
+<script>
+const D = window.CITY_MIDTOWN;
+const roads = D.roads, buildings = D.buildings, parks = D.parks || [];
+const CP = GAME.CityPlan;
+
+// ---- derive the same furniture the game builds ----
+const inters = CP.intersections(roads).filter(e => e.n >= 3);
+const corners = [];   // {x,z} sidewalk corner spots
+for (const it of inters) {
+  const s = CP.sidewalkSpotNear(it.x, it.z, roads, 2.2);
+  if (s) corners.push(s);
+}
+
+// ---- world bounds ----
+let minX=1e9,maxX=-1e9,minZ=1e9,maxZ=-1e9;
+for (const b of buildings){ minX=Math.min(minX,b.bx0??Math.min(...b.p.map(p=>p[0]))); }
+minX=1e9;maxX=-1e9;minZ=1e9;maxZ=-1e9;
+for (const b of buildings) for (const p of b.p){ minX=Math.min(minX,p[0]);maxX=Math.max(maxX,p[0]);minZ=Math.min(minZ,p[1]);maxZ=Math.max(maxZ,p[1]); }
+
+// ---- view transform ----
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+let scale, camx=(minX+maxX)/2, camz=(minZ+maxZ)/2;
+function resize(){ cv.width=innerWidth; cv.height=innerHeight; if(!scale) scale = Math.min(cv.width/(maxX-minX+200), cv.height/(maxZ-minZ+200)); draw(); }
+addEventListener('resize', resize);
+const SX = x => (x-camx)*scale + cv.width/2;
+const SZ = z => (z-camz)*scale + cv.height/2;
+
+let drag=null;
+cv.addEventListener('mousedown',e=>drag={x:e.clientX,y:e.clientY,cx:camx,cz:camz});
+addEventListener('mouseup',()=>drag=null);
+addEventListener('mousemove',e=>{ if(!drag)return; camx=drag.cx-(e.clientX-drag.x)/scale; camz=drag.cz-(e.clientY-drag.y)/scale; draw(); });
+cv.addEventListener('wheel',e=>{ e.preventDefault(); const f=Math.exp(-e.deltaY*0.0015); scale*=f; draw(); },{passive:false});
+addEventListener('keydown',e=>{ const row='1234'.indexOf(e.key); if(row>=0){ camz=minZ+(maxZ-minZ)*(row+0.5)/4; camx=(minX+maxX)/2; scale=Math.min(cv.width/((maxX-minX)/1+120), cv.height/((maxZ-minZ)/4+120)); draw(); } });
+for (const id of ['tRoad','tWalk','tBldg','tGrid','tLights','tBlades','tProblems'])
+  document.getElementById(id).addEventListener('change', draw);
+const on = id => document.getElementById(id).checked;
+
+function draw(){
+  ctx.fillStyle='#0b0d12'; ctx.fillRect(0,0,cv.width,cv.height);
+  // parks
+  ctx.fillStyle='#1a3320';
+  for (const pk of parks){ ctx.beginPath(); pk.p.forEach((p,i)=>i?ctx.lineTo(SX(p[0]),SZ(p[1])):ctx.moveTo(SX(p[0]),SZ(p[1]))); ctx.closePath(); ctx.fill(); }
+  // sidewalks (drawn first / under)
+  if (on('tWalk')){
+    ctx.strokeStyle='#5a5750'; ctx.lineCap='butt';
+    for (const r of roads){ const p=r.p; for(let i=1;i<p.length;i++){ const a=p[i-1],b=p[i];
+      const dx=b[0]-a[0],dz=b[1]-a[1],L=Math.hypot(dx,dz)||1,ux=dx/L,uz=dz/L; const off=r.w/2+1.9;
+      ctx.lineWidth=3.8*scale;
+      for(const s of [1,-1]){ ctx.beginPath(); ctx.moveTo(SX(a[0]-uz*off*s),SZ(a[1]+ux*off*s)); ctx.lineTo(SX(b[0]-uz*off*s),SZ(b[1]+ux*off*s)); ctx.stroke(); }
+    }}
+  }
+  // roads (asphalt at width, on top of sidewalks — matches the game's height order)
+  if (on('tRoad')){
+    ctx.strokeStyle='#2b2e36'; ctx.lineCap='round';
+    for (const r of roads){ ctx.lineWidth=Math.max(1,r.w*scale); ctx.beginPath();
+      r.p.forEach((p,i)=>i?ctx.lineTo(SX(p[0]),SZ(p[1])):ctx.moveTo(SX(p[0]),SZ(p[1]))); ctx.stroke(); }
+    ctx.strokeStyle='#c9a83a55'; ctx.lineWidth=Math.max(0.5,scale);
+    for (const r of roads){ ctx.beginPath(); r.p.forEach((p,i)=>i?ctx.lineTo(SX(p[0]),SZ(p[1])):ctx.moveTo(SX(p[0]),SZ(p[1]))); ctx.stroke(); }
+  }
+  // buildings
+  if (on('tBldg')){
+    ctx.strokeStyle='#4a4f5c'; ctx.fillStyle='#20242c'; ctx.lineWidth=1;
+    for (const b of buildings){ if(b.p.length<3)continue; ctx.beginPath();
+      b.p.forEach((p,i)=>i?ctx.lineTo(SX(p[0]),SZ(p[1])):ctx.moveTo(SX(p[0]),SZ(p[1]))); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+  }
+  // furniture: corners → lights/blades; flag any that land in a roadway
+  let badL=0, badB=0;
+  if (on('tLights') || on('tBlades') || on('tProblems')){
+    for (let i=0;i<corners.length;i++){ const s=corners[i];
+      const inRoad = CP.inRoadway(s.x, s.z, roads, 0.4);
+      if (on('tLights')){ if(inRoad)badL++; ctx.fillStyle = (inRoad&&on('tProblems'))?'#ff5a4a':'#e8963a';
+        ctx.beginPath(); ctx.arc(SX(s.x),SZ(s.z),Math.max(2,scale*0.8),0,7); ctx.fill(); }
+    }
+  }
+  // sector grid
+  if (on('tGrid')){
+    ctx.strokeStyle='#39415a'; ctx.fillStyle='#5a6280'; ctx.lineWidth=1; ctx.font='16px system-ui'; ctx.textBaseline='top';
+    const COLS=4, ROWS=4, dw=(maxX-minX)/COLS, dh=(maxZ-minZ)/ROWS;
+    for(let i=0;i<=COLS;i++){ const x=SX(minX+i*dw); ctx.beginPath(); ctx.moveTo(x,SZ(minZ)); ctx.lineTo(x,SZ(maxZ)); ctx.stroke(); }
+    for(let j=0;j<=ROWS;j++){ const y=SZ(minZ+j*dh); ctx.beginPath(); ctx.moveTo(SX(minX),y); ctx.lineTo(SX(maxX),y); ctx.stroke(); }
+    for(let i=0;i<COLS;i++)for(let j=0;j<ROWS;j++) ctx.fillText('ABCD'[i]+(j+1), SX(minX+i*dw)+4, SZ(minZ+j*dh)+4);
+  }
+  document.getElementById('stats').innerHTML =
+    `roads <b>${roads.length}</b> · buildings <b>${buildings.length}</b><br>`+
+    `intersections <b>${inters.length}</b> · corner spots <b>${corners.length}</b><br>`+
+    `lights in roadway: <b class="${badL?'bad':'ok'}">${badL}</b> / ${corners.length}`;
+}
+resize();
+</script>
+</body>
+</html>

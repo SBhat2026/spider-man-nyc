@@ -1,0 +1,623 @@
+// Boot, input, camera, menu, reflection probe, main loop.
+(function () {
+  const $ = (id) => document.getElementById(id);
+
+  // ---------- renderer / scene ----------
+  const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, GAME.GFX.pixelRatio || 1.5));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.16;
+  $('game').appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(
+    GAME.CAM.fov, window.innerWidth / window.innerHeight, 0.5, 14000);
+
+  // shadow quality from config
+  const rig = new GAME.LightingRig(scene);
+  rig.sun.shadow.mapSize.set(GAME.GFX.shadowMap, GAME.GFX.shadowMap);
+  rig.sun.shadow.radius = GAME.GFX.shadowRadius;
+
+  // Reflection probe (metallic skins pick up sky + city).
+  // Rendering all 6 cube faces at once made every 24th frame do 7x the work —
+  // a visible periodic hitch. Instead we render ONE face per update tick:
+  // same freshness overall, the spike becomes a small constant cost.
+  const envRT = new THREE.WebGLCubeRenderTarget(GAME.GFX.envMapSize, {
+    generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
+  const cubeCam = new THREE.CubeCamera(1, 4000, envRT);
+  scene.add(cubeCam);
+  scene.environment = envRT.texture;
+  let envFace = 0;
+  function updateProbeFace() {
+    const gl = renderer, rt = envRT;
+    const cam = cubeCam.children[envFace];
+    cubeCam.position.copy(camera.position);
+    cubeCam.updateMatrixWorld();
+    const prevRT = gl.getRenderTarget();
+    // mips regenerate only when rendering INTO the target — pay that cost
+    // once per cycle, on the final face
+    rt.texture.generateMipmaps = (envFace === 5);
+    gl.setRenderTarget(rt, envFace);
+    gl.render(scene, cam);
+    gl.setRenderTarget(prevRT);
+    envFace = (envFace + 1) % 6;
+  }
+
+  // ---------- world ----------
+  const cities = {};
+  function getCity(key) {
+    if (!cities[key]) cities[key] = new GAME.City(GAME.zones[key]);
+    return cities[key];
+  }
+
+  const hero = new GAME.Hero();
+  hero.addTo(scene);
+
+  let city = null, traffic = null, pigeons = null, player = null;
+  function setZone(key) {
+    if (city) {
+      scene.remove(city.group);
+      if (traffic) { scene.remove(traffic.group); traffic.dispose(); }
+      if (pigeons) { scene.remove(pigeons.group); pigeons.dispose(); }
+    }
+    GAME.settings.zone = key;
+    if (city && city.ghostGroup) scene.remove(city.ghostGroup);
+    city = getCity(key);
+    scene.add(city.group);
+    scene.add(city.buildTiling());
+    traffic = new GAME.Traffic(city);
+    scene.add(traffic.group);
+    pigeons = new GAME.Pigeons(city);
+    scene.add(pigeons.group);
+    if (GAME.landmarks) GAME.landmarks.dispose();
+    GAME.landmarks = new GAME.Landmarks(city, scene);
+    if (GAME.minimap) GAME.minimap.dispose();
+    GAME.minimap = new GAME.Minimap(city);
+    if (GAME.crowds) { scene.remove(GAME.crowds.group); GAME.crowds.dispose(); }
+    GAME.crowds = new GAME.Crowds(city);
+    scene.add(GAME.crowds.group);
+    if (GAME.events) GAME.events.dispose();
+    GAME.events = new GAME.StreetEvents(city, scene, pigeons);
+    GAME.photos = new GAME.PhotoChallenges(GAME.landmarks, city);
+    GAME.districts = new GAME.Districts(city);
+    if (!player) player = new GAME.Player(city, hero);
+    else player.setCity(city);
+    GAME.player = player;      // exposed for debug/minimap tooling
+    $('zonename').textContent = city.zone.name;
+    GAME.debug = { scene, city, traffic, pigeons, rig, hero, camera, renderer,
+                   step: (dt) => {           // manual frame step (testing/headless)
+                     if (photo.on) { updatePhotoCam(dt); renderer.render(scene, camera); return; }
+                     camera.getWorldDirection(camDir);
+                     if (player) player.update(dt, camera, camDir);
+                     rig.update(dt, player.pos, camera.position);
+                     traffic.update(dt, rig);
+                     pigeons.update(dt);
+                     updateCamera(dt);
+                     renderer.render(scene, camera);
+                   },
+                   setCam: (yaw, pitch) => { camYaw = yaw; if (pitch !== undefined) camPitch = pitch; } };
+  }
+
+  // ---------- input ----------
+  const keys = { w: 0, a: 0, s: 0, d: 0, space: 0, c: 0 };
+  let camYaw = Math.PI, camPitch = -0.18, lastMouseT = 0;
+  let camZoom = 1;   // scroll-wheel / two-finger zoom multiplier on camera dist
+  let playing = false;
+  // photo mode: world freezes, camera flies free
+  const photo = { on: false, pos: new THREE.Vector3(), yaw: 0, pitch: 0 };
+  // camera feel bus — anything can kick it: sweet-spot release, near-miss,
+  // hard landings. Pulse widens the FOV for a beat; shake jitters the frame.
+  GAME.camFx = { pulse: 0, shake: 0 };
+
+  const KEYMAP = { KeyW: 'w', KeyA: 'a', KeyS: 's', KeyD: 'd', Space: 'space',
+                   KeyC: 'c', KeyK: 'k', ShiftLeft: 'shift', ShiftRight: 'shift',
+                   ArrowUp: 'w', ArrowDown: 's', ArrowLeft: 'a', ArrowRight: 'd' };
+  window.addEventListener('keydown', (e) => {
+    if (!playing) return;
+    const k = KEYMAP[e.code];
+    if (k) { keys[k] = 1; e.preventDefault(); }
+    else if (e.code === 'KeyF') {
+      // F + held direction picks the trick: W swan double · S double tuck ·
+      // A/D corkscrew · plain F classic flip
+      const t = keys.w ? 3 : keys.s ? 6 : keys.a ? 4 : keys.d ? 5 : 0;
+      player.doTrick(t);
+      hint(['Flip!', '', '', 'Swan dive — double flip!', 'Corkscrew!',
+            'Corkscrew!', 'Double tuck!'][t] || 'Flip!');
+    }
+    else if (e.code === 'KeyQ') { player.doTrick(1); hint('Barrel roll!'); }
+    else if (e.code === 'KeyE') {
+      const t = keys.w ? 7 : 2;
+      player.doTrick(t);
+      hint(t === 7 ? 'Superman!' : 'Spread eagle!');
+    }
+    else if (e.code === 'KeyM') {
+      GAME.audio.setMuted(!GAME.audio.muted);
+      hint(GAME.audio.muted ? 'Sound off' : 'Sound on');
+    }
+    else if (e.code === 'KeyP') togglePhoto();
+    else if (e.code === 'Enter' && photo.on && GAME.photos) {
+      const res = GAME.photos.snap(camera, rig);
+      hint(res || 'Snapshot.');
+      const el = $('phototask');
+      if (el) el.textContent = GAME.photos.nextHint();
+    }
+    else if (e.code === 'KeyT') hint('Time: ' + rig.toggle());
+ else if (e.code === 'KeyN') {
+      hint('Suit: ' + hero.cycleSkin()); GAME.applyNoir();
+    } else if (e.code === 'KeyR') player.respawn();
+  });
+  window.addEventListener('keyup', (e) => {
+    const k = KEYMAP[e.code];
+    if (k) keys[k] = 0;
+  });
+  // Pointer lock is the difference between a real free-look and a camera that
+  // stops at the screen edge. If the browser refuses the lock (Safari often
+  // does), fall back to click-drag looking so full rotation always works.
+  // The mouse is a pure camera device — it never fires webs. Where you look
+  // steers the swing and biases the animation instead.
+  let mouseDrag = false;
+  const isLocked = () => document.pointerLockElement === renderer.domElement;
+  window.addEventListener('mousedown', () => {
+    if (!playing) return;
+    if (!isLocked()) {
+      try { renderer.domElement.requestPointerLock(); } catch (err) {}
+      mouseDrag = true;
+    }
+  });
+  window.addEventListener('mouseup', () => { mouseDrag = false; });
+  // scroll wheel / two-finger trackpad → zoom the chase camera in and out
+  window.addEventListener('wheel', (e) => {
+    if (!playing || photo.on) return;
+    camZoom = Math.max(0.45, Math.min(2.8, camZoom * (1 + e.deltaY * 0.0012)));
+    e.preventDefault();
+  }, { passive: false });
+  window.addEventListener('mousemove', (e) => {
+    if (!playing) return;
+    if (!isLocked() && !mouseDrag) return;
+    if (photo.on) {
+      photo.yaw -= e.movementX * 0.0024;
+      photo.pitch -= e.movementY * 0.0022;
+      photo.pitch = Math.max(-1.55, Math.min(1.55, photo.pitch));
+      return;
+    }
+    camYaw -= e.movementX * 0.0028;
+    camPitch -= e.movementY * 0.0026;
+    camPitch = Math.max(GAME.CAM.pitchMin, Math.min(GAME.CAM.pitchMax, camPitch));
+    lastMouseT = perf();
+  });
+
+  function togglePhoto() {
+    photo.on = !photo.on;
+    if (photo.on) {
+      photo.pos.copy(camera.position);
+      const d = new THREE.Vector3();
+      camera.getWorldDirection(d);
+      photo.yaw = Math.atan2(d.x, d.z);
+      photo.pitch = Math.asin(Math.max(-1, Math.min(1, d.y)));
+    }
+    $('hud').style.display = photo.on ? 'none' : 'block';
+    $('photolabel').style.display = photo.on ? 'block' : 'none';
+    if (photo.on && GAME.photos) {
+      const el = $('phototask');
+      if (el) el.textContent = GAME.photos.nextHint();
+    }
+    for (const k in keys) keys[k] = 0;
+  }
+
+  function updatePhotoCam(dt) {
+    const dir = new THREE.Vector3(
+      Math.sin(photo.yaw) * Math.cos(photo.pitch),
+      Math.sin(photo.pitch),
+      Math.cos(photo.yaw) * Math.cos(photo.pitch));
+    const right = new THREE.Vector3(dir.z, 0, -dir.x).normalize();
+    const sp = 28 * (keys.shift ? 3 : 1) * dt;
+    photo.pos.addScaledVector(dir, (keys.w - keys.s) * sp);
+    photo.pos.addScaledVector(right, (keys.a - keys.d) * sp);
+    photo.pos.y += (keys.space - keys.c) * sp;
+    camera.position.copy(photo.pos);
+    camera.lookAt(photo.pos.clone().add(dir));
+    camera.fov += (GAME.CAM.fov - camera.fov) * Math.min(1, dt * 5);
+    camera.updateProjectionMatrix();
+  }
+  let hadLock = false;
+  document.addEventListener('pointerlockchange', () => {
+    const locked = document.pointerLockElement === renderer.domElement;
+    if (locked) hadLock = true;
+    // only treat unlock as ESC-to-menu if the lock had actually engaged
+    if (!locked && hadLock && playing) {
+      hadLock = false;
+      playing = false;
+      $('menu').style.display = 'flex';
+      if (GAME.minimap) GAME.minimap.cv.style.display = GAME.minimap.cp.style.display = 'none';
+      for (const k in keys) keys[k] = 0;
+    }
+  });
+
+  function perf() { return performance.now() / 1000; }
+
+  // ---------- menu ----------
+  function wireRow(id, apply) {
+    const row = $(id);
+    row.querySelectorAll('button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        row.querySelectorAll('button').forEach(b => b.classList.remove('sel'));
+        btn.classList.add('sel');
+        apply(btn.dataset.v);
+      });
+    });
+  }
+  wireRow('optZone', v => {});                       // applied on start
+  wireRow('optTime', v => { GAME.settings.time = v; rig.setMode(v); });
+  // suit buttons respect unlocks: locked suits show the clue instead
+  const skinRow = $('optSkin');
+  // Noir aesthetic: desaturate the 3D canvas + show the grain/vignette overlay
+  // (HUD & minimap stay in color, per spec). Called on every skin change.
+  GAME.applyNoir = function () {
+    const noir = !!(GAME.SKINS[GAME.settings.skin] || {}).noir;
+    const g = $('game'), fx = $('noirfx');
+    if (g) g.style.filter = noir ? 'grayscale(1) contrast(1.08) brightness(1.03)' : '';
+    if (fx) fx.classList.toggle('on', noir);
+  };
+  GAME.refreshSuitLocks = function () {
+    skinRow.querySelectorAll('button').forEach(btn => {
+      const k = btn.dataset.v;
+      const locked = GAME.unlocks && !GAME.unlocks.has(k);
+      btn.classList.toggle('locked', locked);
+      btn.textContent = (locked ? '\u{1F512} ' : '') + GAME.SKINS[k].label;
+      btn.title = locked ? GAME.unlocks.clue(k) : '';
+      if (locked && btn.classList.contains('sel')) {
+        btn.classList.remove('sel');
+        skinRow.querySelector('button[data-v="classic"]').classList.add('sel');
+      }
+    });
+  };
+  skinRow.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const k = btn.dataset.v;
+      if (GAME.unlocks && !GAME.unlocks.has(k)) {
+        const el = $('unlockHint');
+        if (el) el.textContent = '\u{1F512} ' + GAME.unlocks.clue(k);
+        return;
+      }
+      skinRow.querySelectorAll('button').forEach(b => b.classList.remove('sel'));
+      btn.classList.add('sel');
+      const el = $('unlockHint');
+      if (el) el.textContent = '';
+      hero.setSkin(k);
+      GAME.applyNoir();
+    });
+  });
+  GAME.refreshSuitLocks();
+
+  const audio = GAME.audio = new GAME.GameAudio();
+  $('startBtn').addEventListener('click', () => {
+    const zoneBtn = $('optZone').querySelector('.sel');
+    const zoneKey = zoneBtn ? zoneBtn.dataset.v : 'midtown';
+    if (!city || GAME.settings.zone !== zoneKey) setZone(zoneKey);
+    $('menu').style.display = 'none';
+    playing = true;
+    GAME.applyNoir();
+    if (GAME.minimap) GAME.minimap.cv.style.display = GAME.minimap.cp.style.display = 'block';
+    audio.start();   // user gesture — safe to open the AudioContext here
+    try { renderer.domElement.requestPointerLock(); } catch (err) {}
+    hint('Hold SPACE to swing — release at the top of the arc');
+    setTimeout(() => {
+      if (playing && document.pointerLockElement !== renderer.domElement)
+        hint('Click the screen to capture the mouse for full look-around', 6000);
+    }, 700);
+  });
+
+
+  let hintTimer = null;
+  GAME.notify = (msg, ms) => hint(msg, ms);
+  function hint(msg, ms) {
+    const el = $('hint');
+    el.textContent = msg;
+    el.classList.remove('fade');
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(() => el.classList.add('fade'), ms || 3500);
+  }
+
+  // ---------- camera follow (cinematic) ----------
+  const camPos = new THREE.Vector3();
+  // called by the player's tiling wrap so the follow-camera jumps with him
+  GAME.wrapShift = (dx, dz) => { camPos.x += dx; camPos.z += dz; };
+  const camTarget = new THREE.Vector3();
+  const camDir = new THREE.Vector3();
+  const prevVel = new THREE.Vector3();
+  let camRoll = 0, camDist = GAME.CAM.dist;
+  let started = false;
+
+  function updateCamera(dt) {
+    const C = GAME.CAM;
+    // gentle auto-align behind velocity while swinging fast, if mouse idle
+    const hs = Math.hypot(player.vel.x, player.vel.z);
+    // gentle, and only after the mouse has been idle a while — never fight a
+    // deliberate look-around
+    if (player.mode !== 'ground' && hs > 14 && perf() - lastMouseT > 2.4) {
+      const want = Math.atan2(-player.vel.x, -player.vel.z);
+      let d = want - camYaw;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      camYaw += d * Math.min(1, dt * 0.4);
+    }
+    camDir.set(
+      Math.sin(camYaw) * Math.cos(camPitch),
+      Math.sin(camPitch),
+      Math.cos(camYaw) * Math.cos(camPitch));
+
+    camTarget.copy(player.pos);
+    camTarget.y += C.height + 0.6;
+    camTarget.addScaledVector(player.vel, 0.05);   // lead room ahead of motion
+
+    // camera breathes: pulls back with speed for wide framing, scaled by the
+    // player's scroll-wheel zoom
+    const speedK0 = Math.min(1, player.vel.length() / GAME.PHYS.termVel);
+    const wantDist = (C.dist + C.distSpeedBoost * speedK0) * camZoom;
+    camDist += (wantDist - camDist) * Math.min(1, dt * 2.5);
+
+    let desired = new THREE.Vector3().copy(camTarget).addScaledVector(camDir, camDist);
+    // crawling: orbit stays on the open side of the wall — never inside it.
+    // Mouse yaw still steers within ±63° of the wall normal.
+    if (player.mode === 'crawl' && player.wall) {
+      const n = player.wall;
+      const nYaw = Math.atan2(n.nx, n.nz);
+      let rel = camYaw - nYaw;
+      while (rel > Math.PI) rel -= Math.PI * 2;
+      while (rel < -Math.PI) rel += Math.PI * 2;
+      rel = Math.max(-2.35, Math.min(2.35, rel));   // near-full look-around on walls
+      const a = nYaw + rel;
+      const pitch = Math.max(-0.3, Math.min(0.9, camPitch + 0.25));
+      desired = new THREE.Vector3(
+        camTarget.x + Math.sin(a) * Math.cos(pitch) * camDist,
+        camTarget.y + Math.sin(pitch) * camDist,
+        camTarget.z + Math.cos(a) * Math.cos(pitch) * camDist);
+    }
+    if (desired.y < 0.6) desired.y = 0.6;
+    // occlusion: march from head toward camera, stop before entering a building
+    const steps = 12;
+    let safe = desired;
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      const px = camTarget.x + (desired.x - camTarget.x) * t;
+      const py = camTarget.y + (desired.y - camTarget.y) * t;
+      const pz = camTarget.z + (desired.z - camTarget.z) * t;
+      if (city.isSolid(px, py, pz)) {
+        const tSafe = Math.max(0.22, (i - 1) / steps);
+        safe = new THREE.Vector3(
+          camTarget.x + (desired.x - camTarget.x) * tSafe,
+          camTarget.y + (desired.y - camTarget.y) * tSafe,
+          camTarget.z + (desired.z - camTarget.z) * tSafe);
+        break;
+      }
+    }
+    if (!started) { camPos.copy(safe); started = true; }
+    const k = 1 - Math.exp(-dt * C.lag);
+    camPos.lerp(safe, k);
+    // the lerp path can sweep through a corner — snap out if we ended up inside
+    if (city.isSolid(camPos.x, camPos.y, camPos.z)) camPos.copy(safe);
+    camera.position.copy(camPos);
+    camera.lookAt(camTarget);
+
+    // banking roll into turns (lateral acceleration → dutch tilt)
+    if (dt > 0) {
+      const right = new THREE.Vector3(-camDir.z, 0, camDir.x).normalize();
+      const latA = (player.vel.x - prevVel.x) / dt * right.x
+                 + (player.vel.z - prevVel.z) / dt * right.z;
+      const wantRoll = (player.mode === 'ground') ? 0
+        : Math.max(-C.rollMax, Math.min(C.rollMax, -latA * 0.006));
+      camRoll += (wantRoll - camRoll) * Math.min(1, dt * 3.5);
+      camera.rotateZ(camRoll);
+    }
+    prevVel.copy(player.vel);
+
+    // camera feel: FOV pulse (release kick / near-miss), impact shake, and a
+    // whisper of handheld sway that scales with speed
+    const fx = GAME.camFx;
+    fx.pulse = Math.max(0, fx.pulse - dt * 2.4);
+    fx.shake = Math.max(0, fx.shake - dt * 3.2);
+    const speedK = Math.min(1, player.vel.length() / GAME.PHYS.termVel);
+    if (speedK > 0.25 && player.mode !== 'ground') {
+      const tnow = perf();
+      const sway = (speedK - 0.25) * 0.09;
+      camera.position.x += Math.sin(tnow * 1.9) * sway;
+      camera.position.y += Math.sin(tnow * 2.7 + 1.3) * sway * 0.6;
+    }
+    if (fx.shake > 0.01) {
+      camera.position.x += (Math.random() - 0.5) * 0.22 * fx.shake;
+      camera.position.y += (Math.random() - 0.5) * 0.18 * fx.shake;
+    }
+    const wantFov = C.fov + C.swingFovBoost * speedK + 8 * fx.pulse;
+    camera.fov += (wantFov - camera.fov) * Math.min(1, dt * 6);
+    camera.updateProjectionMatrix();
+  }
+
+
+  // ---------- resize ----------
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  // ---------- main loop ----------
+  setZone(GAME.settings.zone);
+  rig.setMode(GAME.settings.time);
+  const clock = new THREE.Clock();
+  let frame = 0;
+
+  // 2099 apex slow-mo + global time scale
+  GAME.timeScale = 1;
+  let slowT = 0, apexUsed = false;
+  // Miles Venom Blast ring (built lazily, reused)
+  let venomRing = null, venomT = 1, venomLight = null;
+  function venomBlast(pos) {
+    if (!venomRing) {
+      venomRing = new THREE.Mesh(new THREE.RingGeometry(0.75, 1, 40),
+        new THREE.MeshBasicMaterial({ color: 0x4ae0ff, transparent: true,
+          side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false }));
+      venomRing.rotation.x = -Math.PI / 2;
+      scene.add(venomRing);
+      venomLight = new THREE.PointLight(0x4ae0ff, 0, 40, 2);
+      scene.add(venomLight);
+    }
+    venomRing.position.copy(pos); venomRing.position.y += 0.4;
+    venomLight.position.copy(venomRing.position); venomLight.position.y += 2;
+    venomT = 0;
+    if (GAME.camFx) GAME.camFx.shake = Math.max(GAME.camFx.shake, 0.9);
+    if (pigeons) pigeons.scareNear(pos.x, pos.z, pos.y, 30);
+  }
+  // persistent traversal stats (badges read these)
+  let stats = { maxSpeed: 0, maxAlt: 0, swingDist: 0, longAir: 0 };
+  try { Object.assign(stats, JSON.parse(localStorage.getItem('spidey.stats.v1')) || {}); } catch (err) {}
+  GAME.stats = stats;
+  let statT = 0, curAir = 0;
+
+  function loop() {
+    requestAnimationFrame(loop);
+    const rawDt = Math.min(0.05, clock.getDelta());
+    // ease the time scale toward slow-mo when a 2099 apex is active
+    const wantTS = slowT > 0 ? 0.35 : 1;
+    GAME.timeScale += (wantTS - GAME.timeScale) * Math.min(1, rawDt * 9);
+    slowT = Math.max(0, slowT - rawDt);
+    const dt = rawDt * GAME.timeScale;
+    frame++;
+    GAME.frameCount = frame;
+
+    if (GAME.debug && GAME.debug.paused) {   // debug freeze: inspect exact poses
+      renderer.render(scene, camera);
+      return;
+    }
+
+    if (photo.on) {
+      // world is frozen — only the free camera moves
+      updatePhotoCam(dt);
+      renderer.render(scene, camera);
+      return;
+    }
+
+    if (playing) {
+      player.keys = keys;
+      Object.assign(player.keys, keys);
+      camera.getWorldDirection(camDir);
+      const wasSwing = player.mode === 'swing';
+      player.update(dt, camera, camDir);
+      // 2099: automatic bullet-time at the apex of a real jump/launch
+      if (GAME.settings.skin === 'y2099' && player.mode === 'air' && !apexUsed &&
+          Math.abs(player.vel.y) < 2.4 && (player.pos.y - player._support) > 12) {
+        apexUsed = true; slowT = 0.85;
+        if (GAME.camFx) GAME.camFx.pulse = Math.max(GAME.camFx.pulse, 0.5);
+      }
+      if (player.mode !== 'air') apexUsed = false;
+      // Miles: Venom Blast shockwave on a hard landing
+      if (player.justLanded && GAME.settings.skin === 'miles' &&
+          (player.lastImpact || 0) > 14) venomBlast(player.pos);
+      if (venomT < 1) {
+        venomT = Math.min(1, venomT + rawDt / 0.55);
+        const r = 1 + venomT * 20;
+        venomRing.scale.set(r, r, 1);
+        venomRing.material.opacity = 0.9 * (1 - venomT);
+        venomLight.intensity = 5 * (1 - venomT);
+      }
+      // traversal stats for badges
+      {
+        const sp = player.vel.length();
+        if (sp > stats.maxSpeed) stats.maxSpeed = sp;
+        if (player.pos.y > stats.maxAlt) stats.maxAlt = player.pos.y;
+        if (player.mode === 'swing') stats.swingDist += sp * dt;
+        if (player.mode === 'air' || player.mode === 'swing') curAir += dt;
+        else { if (curAir > stats.longAir) stats.longAir = curAir; curAir = 0; }
+        statT += rawDt;
+        if (statT > 10) {
+          statT = 0;
+          try { localStorage.setItem('spidey.stats.v1', JSON.stringify(stats)); } catch (err) {}
+        }
+      }
+      // audio: thwip when a web catches, thud when landing, wind/pad with speed
+      if (player.mode === 'swing' && !wasSwing) audio.thwip();
+      if (player.justLanded) audio.impact(0.5 + Math.min(0.5, player.vel.length() / 40));
+      audio.update(dt, player.vel.length());
+    } else if (player) {
+      // idle menu shot: slow orbit
+      hero.update({ mode: 'ground', pos: player.pos, vel: new THREE.Vector3(),
+                    speed: 0, vy: 0, anchor: null, dt, yaw: player.yaw });
+    }
+
+    rig.update(dt, player.pos, camera.position);
+    // window glow follows the sunset amount
+    for (const m of city.wallMats) m.emissiveIntensity = rig.windowGlow * 0.95;
+    if (city.lampHeadMat) {   // street lamps warm up with the sunset
+      const lk = 0.16 + 0.84 * Math.min(1, rig.windowGlow);
+      city.lampHeadMat.color.setRGB(lk, lk * 0.86, lk * 0.62);
+    }
+    if (city.beaconMat) {
+      const bk = 0.1 + 0.9 * Math.min(1, rig.windowGlow);
+      city.beaconMat.color.setRGB(bk, bk * 0.12, bk * 0.1);
+    }
+    traffic.update(dt, rig);
+    pigeons.update(dt);
+    if (GAME.landmarks) GAME.landmarks.update(dt, rig);
+    if (playing && GAME.crowds && player) GAME.crowds.update(dt, player.pos);
+    if (playing && GAME.events && player) GAME.events.update(dt, player.pos);
+    if (GAME.districts) GAME.districts.update(dt);
+    if (GAME.minimap && player) {
+      // The camera sits at player + camDir·dist and looks BACK at the player,
+      // so the view direction is camYaw + π. Feeding raw camYaw had the map
+      // arrow and compass pointing exactly backwards.
+      GAME.minimap.update(dt, player.pos.x, player.pos.z, camYaw + Math.PI);
+    }
+    updateCamera(dt);
+
+    // refresh reflection probe one cube face at a time (hide hero to avoid
+    // self-capture); matte suits barely show reflections, so tick them slower
+    const metallic = (GAME.SKINS[GAME.settings.skin] || {}).torsoMetal;
+    const envEvery = metallic ? GAME.GFX.envMapEvery : (GAME.GFX.envMapEveryMatte || 20);
+    if (frame % envEvery === 1) {
+      hero.root.visible = false;
+      updateProbeFace();
+      hero.root.visible = true;
+    }
+
+    // Draw distance rides the fog: nothing beyond full fog is visible, so
+    // let the frustum CULL it — otherwise the ghost-tile cities render in
+    // full (700+ calls, 12M tris) just to be fogged out.
+    if (frame % 8 === 3 && city)
+      // ghosts only need to exist near seams: past ~2.4km they're half-fogged
+      // silhouettes the eye can't miss, but 700+ draw calls the GPU can
+      city.cullGhosts(camera.position.x, camera.position.z,
+                      Math.min(rig.fog.far * 0.95, 2400));
+    const wantFar = rig.fog.far * 1.08;
+    if (Math.abs(camera.far - wantFar) > 60) {
+      camera.far = wantFar;
+      camera.updateProjectionMatrix();
+      rig.sky.scale.setScalar(wantFar * 0.9 / 9000);    // dome safely inside the frustum
+    }
+
+    // ---- perf telemetry: GAME.perf {fps, calls, tris}; GAME.perfLog = true
+    // for a once-a-second console readout ----
+    const info = renderer.info;
+    GAME.perf = GAME.perf || { fps: 0, calls: 0, tris: 0, _n: 0, _t: 0 };
+    GAME.perf._n++; GAME.perf._t += dt;
+    GAME.perf.calls = info.render.calls;
+    GAME.perf.tris = info.render.triangles;
+    if (GAME.perf._t >= 1) {
+      GAME.perf.fps = Math.round(GAME.perf._n / GAME.perf._t);
+      GAME.perf._n = 0; GAME.perf._t = 0;
+      if (GAME.perfLog)
+        console.log('[perf] fps=' + GAME.perf.fps + ' calls=' + GAME.perf.calls +
+                    ' tris=' + (GAME.perf.tris / 1e6).toFixed(2) + 'M');
+    }
+
+    if (playing) {
+      const mph = Math.round(player.vel.length() * 2.237);
+      $('speed').textContent = mph > 3 ? mph + ' MPH' : '';
+    }
+
+    renderer.render(scene, camera);
+  }
+  loop();
+})();
