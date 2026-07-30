@@ -500,6 +500,35 @@
         this._wingK = 0;
         this.body.add(this.wingL, this.wingR);
       }
+      // WALDOES (Iron Spider): four articulated mechanical legs from the upper
+      // back — the default appendages for this suit, and the tool for the dash.
+      {
+        const legMat = new THREE.MeshStandardMaterial({ color: 0x9a1b26, metalness: 0.92, roughness: 0.28 });
+        const tipMat = new THREE.MeshStandardMaterial({ color: 0xd9a531, metalness: 1, roughness: 0.2 });
+        const seg = (len, r0, r1, mat) => { const g = new THREE.CylinderGeometry(r1, r0, len, 6); g.translate(0, len / 2, 0); return new THREE.Mesh(g, mat); };
+        this.waldos = new THREE.Group();
+        this.waldoLegs = [];
+        const mounts = [[-0.15, 0.55, -0.13, 1], [0.15, 0.55, -0.13, -1],
+                        [-0.12, 0.40, -0.15, 1], [0.12, 0.40, -0.15, -1]];
+        let li = 0;
+        for (const [mx, my, mz, sgn] of mounts) {
+          const upper = seg(0.34, 0.032, 0.022, legMat);
+          upper.position.set(mx, my, mz);
+          const baseZ = sgn * (li < 2 ? 0.5 : 0.72), baseX = -0.55;
+          upper.rotation.z = baseZ; upper.rotation.x = baseX;
+          const fore = seg(0.30, 0.021, 0.008, legMat);
+          fore.position.set(0, 0.34, 0); fore.rotation.x = 1.15;
+          const tip = seg(0.06, 0.012, 0.001, tipMat);
+          tip.position.set(0, 0.30, 0); tip.rotation.x = 0.4;
+          fore.add(tip); upper.add(fore);
+          this.waldos.add(upper);
+          this.waldoLegs.push({ upper, fore, baseZ, baseX, phase: li * 1.7 });
+          li++;
+        }
+        this.waldos.visible = false;
+        this._waldoReach = 0; this._waldoT = 0;
+        this.body.add(this.waldos);
+      }
       this.root.add(this.body);
       this._flipT = 1;
       this._flipType = 0;
@@ -633,6 +662,7 @@
           color: def.rim, roughness: 0.5, metalness: 0.2 }),
       };
       if (this.fedora) this.fedora.visible = !!def.fedora;
+      if (this.waldos) this.waldos.visible = (name === 'iron');
       for (const slot in this.slots)
         for (const mesh of this.slots[slot]) {
           if (mesh.material && mesh.material.dispose && mesh.material !== mats[slot])
@@ -650,6 +680,9 @@
     }
 
     setSwingArm(side) { this.swingArm = side; this.webOrigin = side; }
+
+    // kick the waldoes into a forward thrust (dash / stab); decays in update
+    waldoReach() { this._waldoReach = 1; }
 
     // style is chosen by the controller from arc + speed context:
     // 0 reach (workhorse) · 1 straddle (long lazy swings) · 2 cannonball (fast dives)
@@ -1049,6 +1082,20 @@
         if (vis) {
           this.wingL.scale.set(Math.max(0.01, this._wingK), 1, 1);
           this.wingR.scale.set(Math.max(0.01, this._wingK), 1, 1);
+        }
+      }
+      // waldoes: idle sway while walking/climbing, thrust forward on a dash.
+      // On a wall (crawl/wallrun) they splay wider to "grip" the facade.
+      if (this.waldos && this.waldos.visible) {
+        this._waldoT += dt;
+        this._waldoReach = Math.max(0, this._waldoReach - dt * 2.2);
+        const onWall = state.mode === 'crawl' || state.mode === 'wallrun';
+        const reach = this._waldoReach;
+        for (const L of this.waldoLegs) {
+          const sway = Math.sin(this._waldoT * 2.4 + L.phase) * 0.11;
+          L.upper.rotation.x = L.baseX + sway - reach * 1.0 + (onWall ? 0.25 : 0);
+          L.upper.rotation.z = L.baseZ + (onWall ? Math.sign(L.baseZ) * 0.22 : 0);
+          L.fore.rotation.x = 1.15 - sway * 0.6 - reach * 0.7 - (onWall ? 0.3 : 0);
         }
       }
 

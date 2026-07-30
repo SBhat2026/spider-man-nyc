@@ -1742,18 +1742,24 @@
         c.fillStyle = '#050507'; c.fill();
       });
       this._blots = [];
+      // a Spider-Man body ≈ 2 m; drop the portals ~2 body-lengths so they hang
+      // lower and can be swung/dived through
+      const DROP = 4;
       const spots = [[0, 150, 0, 9], [55, 185, 40, 6], [-70, 130, 60, 5],
                      [30, 215, -75, 7], [-45, 245, -30, 4.5]];
       for (const [ox, y, oz, r] of spots) {
         const m = new THREE.Mesh(new THREE.CircleGeometry(r, 36),
           new THREE.MeshBasicMaterial({ map: tex, transparent: true,
             side: THREE.DoubleSide, depthWrite: false }));
-        m.position.set(base.x + ox, y, base.z + oz);
+        m.position.set(base.x + ox, y - DROP, base.z + oz);
         m.rotation.y = Math.random() * Math.PI;
         m.userData.ph = Math.random() * 6.28;
+        m.userData.r = r;                 // for portal pass-through detection
         this.group.add(m);
         this._blots.push(m);
       }
+      // expose the portals so the player can be teleported between them
+      GAME.portals = this._blots;
       this.eggs.push({ id: 'blot', x: base.x, z: base.z, r: 45,
                        label: 'A Hole in Reality', icon: '#111116' });
     }

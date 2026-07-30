@@ -477,6 +477,32 @@
           pos.push(x1, y1, z1, x2, y1, z2, xi2, y1, zi2, xi1, y1, zi1);
           for (let k = 0; k < 4; k++) { nrm.push(0, 1, 0); col.push(cc.r, cc.g, cc.b); }
           idx.push(vi, vi + 2, vi + 1, vi, vi + 3, vi + 2);
+          // UNDERSIDE (soffit) — the projecting cornice hangs over the facade;
+          // without this face you see straight through the eave from the street.
+          // Faces down (−Y), darker (it sits in its own shadow).
+          vi = pos.length / 3;
+          const cu = c.clone().multiplyScalar(0.58);
+          pos.push(x1, y0, z1, x2, y0, z2, xi2, y0, zi2, xi1, y0, zi1);
+          for (let k = 0; k < 4; k++) { nrm.push(0, -1, 0); col.push(cu.r, cu.g, cu.b); }
+          idx.push(vi, vi + 1, vi + 2, vi, vi + 2, vi + 3);
+        }
+      };
+      // INNER parapet wall — the face of the cornice ring that looks back onto
+      // the roof. Without it you see straight through the parapet from the roof
+      // side. Spans y0(roof)→y1(cornice top) along the wall line, facing inward.
+      const innerRing = (poly, y0, y1, col) => {
+        const { pos, nrm, col: cols, idx } = cur;
+        const n = poly.length;
+        for (let i = 0, j = n - 1; i < n; j = i++) {
+          const x1 = poly[j][0], z1 = poly[j][1];
+          const x2 = poly[i][0], z2 = poly[i][1];
+          const dx = x2 - x1, dz = z2 - z1, len = Math.hypot(dx, dz);
+          if (len < 0.01) continue;
+          const nx = -dz / len, nz = dx / len;   // inward (opposite the facade)
+          const vi = pos.length / 3;
+          pos.push(x1, y0, z1, x2, y0, z2, x2, y1, z2, x1, y1, z1);
+          for (let k = 0; k < 4; k++) { nrm.push(nx, 0, nz); cols.push(col.r, col.g, col.b); }
+          idx.push(vi, vi + 1, vi + 2, vi, vi + 2, vi + 3);
         }
       };
       for (const b of this.buildings) {
@@ -497,6 +523,8 @@
         const po = offsetPoly(b.poly, proj);
         // projecting cornice cap: outer face + flat top ring (the standable crown)
         band(b.poly, po, b.h - 0.5, b.h + rise, c.clone().multiplyScalar(0.94));
+        // close the parapet's roof-facing side (from roof level up to the crown)
+        innerRing(b.poly, b.h, b.h + rise, c.clone().multiplyScalar(0.72));
         // one belt course two-thirds up tall masonry — offset OUT from the wall
         // so it never z-fights the facade
         if (!glass && b.h > 34 && (b.hash % 2)) {

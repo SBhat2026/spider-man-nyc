@@ -57,6 +57,11 @@
   const hero = new GAME.Hero();
   hero.addTo(scene);
 
+  // comic sound-effect bubbles (Noir suit only) — grayscale onomatopoeia
+  if (GAME.ComicFX) GAME.comicFX = new GAME.ComicFX(scene);
+  // suit-special world effects (cracks, trampolines, zip-lines, spider-sense)
+  if (GAME.Specials) GAME.specials = new GAME.Specials(scene);
+
   let city = null, traffic = null, pigeons = null, player = null;
   function setZone(key) {
     if (city) {
@@ -149,6 +154,7 @@
  else if (e.code === 'KeyN') {
       hint('Suit: ' + hero.cycleSkin()); GAME.applyNoir();
     } else if (e.code === 'KeyR') player.respawn();
+    else if (e.code === 'KeyG') suitSpecial();
   });
   window.addEventListener('keyup', (e) => {
     const k = KEYMAP[e.code];
@@ -453,6 +459,43 @@
   // 2099 apex slow-mo + global time scale
   GAME.timeScale = 1;
   let slowT = 0, apexUsed = false;
+  GAME.slowmo = (t) => { slowT = Math.max(slowT, t); };
+
+  // --- suit special ability, on the G key (context-sensitive per suit) ---
+  const _sfwd = new THREE.Vector3();
+  function suitSpecial() {
+    if (!playing || !player) return;
+    camera.getWorldDirection(_sfwd);
+    const skin = GAME.settings.skin;
+    if (skin === 'iron') {
+      // Waldo dash: a mechanical lunge in the look direction (+ auto-catch is
+      // just the existing wall-contact grab; a crack marks the push-off point).
+      const b = new THREE.Vector3(_sfwd.x, Math.max(0.18, _sfwd.y * 0.5 + 0.2), _sfwd.z).normalize();
+      player.vel.addScaledVector(b, 17);
+      if (player.mode === 'ground' || player.mode === 'crawl') { player.mode = 'air'; player._airTime = 0.05; player.anchor = null; }
+      if (player.hero.waldoReach) player.hero.waldoReach();
+      if (GAME.specials) GAME.specials.crack(player.pos, new THREE.Vector3(0, 1, 0));
+      if (GAME.camFx) GAME.camFx.pulse = Math.max(GAME.camFx.pulse, 0.5);
+      if (GAME.audio && GAME.audio.thwip) GAME.audio.thwip();
+    } else if (skin === 'tasm') {
+      // On a surface → string a walkable zip-line to the building ahead.
+      // In the air → drop a web-trampoline to bounce off.
+      const grounded = player.mode === 'ground' || player.mode === 'crawl' || player.mode === 'wallrun';
+      if (grounded && GAME.specials) {
+        const tgt = city.findAutoAnchor(player.pos, _sfwd);
+        const ok = GAME.specials.zipline(player.pos, tgt);
+        hint(ok ? 'Zip-line strung' : 'No anchor in sight');
+      } else if (GAME.specials) {
+        GAME.specials.trampoline(player.pos);
+      }
+    } else if (skin === 'upgraded') {
+      GAME.slowmo(0.8);
+      const n = GAME.specials ? GAME.specials.revealNearby(player.pos) : 0;
+      hint('Spider-Sense — ' + n + ' nearby');
+      if (GAME.camFx) GAME.camFx.pulse = Math.max(GAME.camFx.pulse, 0.4);
+    }
+  }
+  GAME.suitSpecial = suitSpecial;
   // Miles Venom Blast ring (built lazily, reused)
   let venomRing = null, venomT = 1, venomLight = null;
   function venomBlast(pos) {
@@ -471,6 +514,44 @@
     if (GAME.camFx) GAME.camFx.shake = Math.max(GAME.camFx.shake, 0.9);
     if (pigeons) pigeons.scareNear(pos.x, pos.z, pos.y, 30);
   }
+  // --- Blot portals: dive through one "hole in reality", pop out another ---
+  const _prevPos = new THREE.Vector3();
+  const _pn = new THREE.Vector3(), _en = new THREE.Vector3(), _hit = new THREE.Vector3();
+  let _portalCd = 0;
+  function portalStep(dt) {
+    _portalCd = Math.max(0, _portalCd - dt);
+    const portals = GAME.portals;
+    if (!portals || portals.length < 2 || _portalCd > 0) { _prevPos.copy(player.pos); return; }
+    for (let i = 0; i < portals.length; i++) {
+      const m = portals[i], c = m.position;
+      _pn.set(Math.sin(m.rotation.y), 0, Math.cos(m.rotation.y));  // disk normal
+      const d0 = (_prevPos.x - c.x) * _pn.x + (_prevPos.z - c.z) * _pn.z;
+      const d1 = (player.pos.x - c.x) * _pn.x + (player.pos.z - c.z) * _pn.z;
+      if (d0 * d1 >= 0) continue;                 // never crossed the disk plane
+      const t = d0 / (d0 - d1);
+      _hit.lerpVectors(_prevPos, player.pos, t);
+      const r = m.userData.r || 6;
+      if (_hit.distanceTo(c) > r * 0.95) continue; // crossed plane but outside the ring
+      // spatial shift: emerge from a different portal, momentum continuing forward
+      const exit = portals[(i + 2) % portals.length];
+      _en.set(Math.sin(exit.rotation.y), 0, Math.cos(exit.rotation.y));
+      const sgn = Math.sign(d1) || 1;
+      const oldx = player.pos.x, oldz = player.pos.z;
+      const speed = Math.hypot(player.vel.x, player.vel.z) || 14;
+      player.pos.copy(exit.position).addScaledVector(_en, sgn * ((exit.userData.r || 6) + 3.5));
+      player.vel.set(_en.x * sgn * speed, player.vel.y, _en.z * sgn * speed);
+      player.anchor = null; player.mode = 'air';
+      if (GAME.wrapShift) GAME.wrapShift(player.pos.x - oldx, player.pos.z - oldz);
+      if (GAME.comicFX) GAME.comicFX.pop('BAMF', player.pos, 'bamf', 7);
+      if (GAME.audio && GAME.audio.thwip) GAME.audio.thwip();
+      if (GAME.camFx) GAME.camFx.pulse = Math.max(GAME.camFx.pulse, 0.6);
+      _portalCd = 0.8;
+      break;
+    }
+    _prevPos.copy(player.pos);
+  }
+  const _fxPos = new THREE.Vector3();
+
   // persistent traversal stats (badges read these)
   let stats = { maxSpeed: 0, maxAlt: 0, swingDist: 0, longAir: 0 };
   try { Object.assign(stats, JSON.parse(localStorage.getItem('spidey.stats.v1')) || {}); } catch (err) {}
@@ -513,6 +594,18 @@
         if (GAME.camFx) GAME.camFx.pulse = Math.max(GAME.camFx.pulse, 0.5);
       }
       if (player.mode !== 'air') apexUsed = false;
+      // Blot portals: teleport between the holes in reality
+      portalStep(rawDt);
+      // comic sound-effect bubbles — Noir suit only
+      if (GAME.settings.skin === 'noir' && GAME.comicFX) {
+        const fx = GAME.comicFX; _fxPos.copy(player.pos); _fxPos.y += 1.5;
+        if (player.mode === 'swing' && !wasSwing) fx.pop('THWIP!', _fxPos, 'thwip', 5);
+        else if (wasSwing && player.mode === 'air' && player.vel.length() > 22)
+          fx.pop('WHOOSH', _fxPos, 'whoosh', 6);
+        if (player.justLanded && (player.lastImpact || 0) > 14) fx.pop('THWAK', _fxPos, 'thwak', 5.5);
+        if (player.wallBounced) fx.pop('KRAK', _fxPos, 'krak', 5.5);
+      }
+      if (player.wallBounced) player.wallBounced = false;
       // Miles: Venom Blast shockwave on a hard landing
       if (player.justLanded && GAME.settings.skin === 'miles' &&
           (player.lastImpact || 0) > 14) venomBlast(player.pos);
@@ -561,6 +654,8 @@
     traffic.update(dt, rig);
     pigeons.update(dt);
     if (GAME.landmarks) GAME.landmarks.update(dt, rig);
+    if (GAME.comicFX) GAME.comicFX.update(rawDt);
+    if (GAME.specials) GAME.specials.update(rawDt, playing ? player : null);
     if (playing && GAME.crowds && player) GAME.crowds.update(dt, player.pos);
     if (playing && GAME.events && player) GAME.events.update(dt, player.pos);
     if (GAME.districts) GAME.districts.update(dt);

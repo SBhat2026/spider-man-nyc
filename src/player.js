@@ -362,6 +362,11 @@
           }
         }
       }
+      // Amazing zip-lines act as a thin walkable beam: they raise the support
+      // height when you're within ~0.7 m of the rope, so you can land on and
+      // tightrope across them (and fall off if you stray).
+      if (GAME.specials && this.mode !== 'crawl' && this.mode !== 'swing')
+        support = GAME.specials.supportOnZip(this.pos, support);
       this._support = support;
       const onSurface = this.pos.y <= support + 0.05;
 
