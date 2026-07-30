@@ -37,29 +37,52 @@
                 display: none; z-index: 5; text-shadow: 0 1px 3px rgba(0,0,0,.8); }
 
   /* ---------- Menu ---------- */
-  #menu { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
-          background: radial-gradient(ellipse at 50% 110%, #4a1a08 0%, #1b0b1e 55%, #07060f 100%);
-          z-index: 10; }
-  #menu .panel { text-align: center; color: #fff; max-width: 640px; padding: 24px; }
-  #menu h1 { font-size: 46px; margin: 0 0 4px; letter-spacing: .06em; font-weight: 800;
-             background: linear-gradient(180deg, #ffd9a0, #ff5f3c 60%, #c22f4e);
+  #menu { position: fixed; inset: 0; display: flex; align-items: flex-start; justify-content: center;
+          background: radial-gradient(ellipse at 50% -8%, #26123a 0%, #140a1e 44%, #05040a 100%);
+          z-index: 10; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  #menu::before { content: ''; position: fixed; inset: 0; pointer-events: none;
+          background: radial-gradient(ellipse at 50% 118%, rgba(211,48,63,.32), transparent 56%); }
+  #menu .panel { position: relative; text-align: center; color: #fff; width: 100%;
+          max-width: 690px; padding: 46px 22px 40px; box-sizing: border-box; }
+  #menu .brand { font-size: 11.5px; letter-spacing: .5em; text-transform: uppercase; opacity: .48;
+          margin: 0 0 8px; }
+  #menu h1 { font-size: clamp(36px, 9vw, 54px); margin: 0; letter-spacing: .03em; font-weight: 800; line-height: 1.02;
+             background: linear-gradient(180deg, #ffe0b0, #ff5f3c 55%, #c22f4e);
              -webkit-background-clip: text; background-clip: text; color: transparent; }
-  #menu h2 { font-size: 13px; letter-spacing: .5em; font-weight: 400; margin: 0 0 34px;
-             opacity: .65; text-transform: uppercase; }
-  .optrow { margin: 14px 0; }
+  #menu .tagline { font-size: 13.5px; opacity: .6; margin: 13px auto 30px; max-width: 460px; line-height: 1.55; }
+  #menu .tagline b { color: #ffb894; font-weight: 600; }
+  .optrow { margin: 16px 0; }
   .optrow .lbl { display: block; font-size: 11px; letter-spacing: .3em; text-transform: uppercase;
-                 opacity: .55; margin-bottom: 8px; }
-  .optrow button { pointer-events: auto; background: rgba(255,255,255,.07); color: #eee;
-                   border: 1px solid rgba(255,255,255,.18); padding: 9px 18px; margin: 0 5px;
-                   border-radius: 8px; font-size: 14px; cursor: pointer; transition: all .15s; }
-  .optrow button:hover { background: rgba(255,255,255,.16); }
-  .optrow button.sel { background: #ff5f3c; border-color: #ff8a5c; color: #fff; font-weight: 600; }
-  #startBtn { margin-top: 30px; font-size: 18px; padding: 14px 52px; border-radius: 12px;
+                 opacity: .5; margin-bottom: 9px; }
+  .optrow button { pointer-events: auto; background: rgba(255,255,255,.06); color: #e9e9ec;
+                   border: 1px solid rgba(255,255,255,.16); padding: 9px 16px; margin: 4px;
+                   border-radius: 9px; font-size: 13.5px; cursor: pointer; transition: all .15s; }
+  .optrow button:hover { background: rgba(255,255,255,.15); border-color: rgba(255,255,255,.32); }
+  .optrow button.sel { background: linear-gradient(180deg,#ff7a4d,#e23b46); border-color: #ff8a5c;
+                       color: #fff; font-weight: 600; box-shadow: 0 4px 16px rgba(226,59,70,.34); }
+  #optSkin button { padding: 8px 13px; font-size: 13px; }
+  #optSkin button.locked { opacity: .5; cursor: help; }
+  /* suit description card */
+  #suitCard { display: flex; gap: 13px; align-items: flex-start; text-align: left;
+              max-width: 500px; margin: 8px auto 2px; padding: 15px 17px;
+              background: rgba(255,255,255,.045); border: 1px solid rgba(255,255,255,.12);
+              border-radius: 14px; }
+  #suitDot { width: 30px; height: 30px; border-radius: 50%; flex: 0 0 auto; margin-top: 3px;
+             border: 2px solid rgba(255,255,255,.55); box-shadow: 0 0 14px rgba(255,255,255,.14); }
+  #suitCard .body { flex: 1; min-width: 0; }
+  #suitName { font-size: 17px; font-weight: 700; }
+  #suitTag { font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase; opacity: .55;
+             display: block; margin-top: 2px; }
+  #suitSpecial { font-size: 13px; opacity: .88; margin-top: 8px; line-height: 1.5; }
+  #suitSpecial b { color: #ffb894; font-weight: 600; }
+  #suitLock { font-size: 12px; color: #ffd07a; margin-top: 7px; }
+  #startBtn { margin-top: 26px; font-size: 18px; padding: 15px 60px; border-radius: 13px;
               background: linear-gradient(180deg, #ff7a4d, #d3303f); border: none; color: #fff;
-              font-weight: 700; letter-spacing: .08em; cursor: pointer; pointer-events: auto; }
-  #startBtn:hover { filter: brightness(1.15); }
-  #optSkin button.locked { opacity: .45; cursor: help; }
-  #unlockHint { min-height: 18px; margin-top: 6px; font-size: 12.5px; color: #ffd07a; opacity: .9; }
+              font-weight: 700; letter-spacing: .1em; cursor: pointer; pointer-events: auto;
+              box-shadow: 0 8px 26px rgba(211,48,63,.4); transition: filter .15s, transform .1s; }
+  #startBtn:hover { filter: brightness(1.12); }
+  #startBtn:active { transform: translateY(1px); }
+  #unlockHint { min-height: 18px; margin-top: 8px; font-size: 12.5px; color: #ffd07a; opacity: .9; }
   #controls { margin-top: 20px; font-size: 12.5px; line-height: 1.7; opacity: .6; }
   #controls b { color: #ffb894; font-weight: 600; }
   #controls summary { cursor: pointer; color: #ffb894; opacity: .85; list-style: none; }
@@ -111,8 +134,9 @@
 
 <div id="menu">
   <div class="panel">
-    <h1>Spider-Man</h1>
-    <h2>New York City</h2>
+    <div class="brand">Real Manhattan · OpenStreetMap</div>
+    <h1>Spider-Man: NYC</h1>
+    <div class="tagline">Web-sling across <b>18,000 real Manhattan buildings</b> — no combat, just the swing, the skyline, and secrets to hunt down.</div>
     <div class="optrow" id="optZone">
       <span class="lbl">District — real NYC street plan</span>
       <button data-v="midtown" class="sel">Manhattan + Central Park</button>
@@ -135,6 +159,15 @@
       <button data-v="tasm">Amazing</button>
       <button data-v="upgraded">Upgraded</button>
       <button data-v="noir">Noir</button>
+    </div>
+    <div id="suitCard">
+      <div id="suitDot"></div>
+      <div class="body">
+        <span id="suitName"></span>
+        <span id="suitTag"></span>
+        <div id="suitSpecial"></div>
+        <div id="suitLock"></div>
+      </div>
     </div>
     <div class="optrow" id="optTouch">
       <span class="lbl">Joystick side (touch)</span>
@@ -159,30 +192,30 @@
   </div>
 </div>
 
-<script src="lib/three.min.js?v=92"></script>
-<script src="data/city_midtown.js?v=92"></script>
-<script src="data/city_fidi.js?v=92"></script>
-<script src="src/config.js?v=92"></script>
-<script src="src/cityplan.js?v=92"></script>
-<script src="src/cloak.js?v=92"></script>
-<script src="src/comicfx.js?v=92"></script>
-<script src="src/specials.js?v=92"></script>
-<script src="src/touch.js?v=92"></script>
-<script src="src/tutorial.js?v=92"></script>
-<script src="src/crowds.js?v=92"></script>
-<script src="src/events.js?v=92"></script>
-<script src="src/photos.js?v=92"></script>
-<script src="src/districts.js?v=92"></script>
-<script src="src/unlocks.js?v=92"></script>
-<script src="src/city.js?v=92"></script>
-<script src="src/lighting.js?v=92"></script>
-<script src="src/hero.js?v=92"></script>
-<script src="src/traffic.js?v=92"></script>
-<script src="src/landmarks.js?v=92"></script>
-<script src="src/minimap.js?v=92"></script>
-<script src="src/pigeons.js?v=92"></script>
-<script src="src/audio.js?v=92"></script>
-<script src="src/player.js?v=92"></script>
-<script src="src/main.js?v=92"></script>
+<script src="lib/three.min.js?v=93"></script>
+<script src="data/city_midtown.js?v=93"></script>
+<script src="data/city_fidi.js?v=93"></script>
+<script src="src/config.js?v=93"></script>
+<script src="src/cityplan.js?v=93"></script>
+<script src="src/cloak.js?v=93"></script>
+<script src="src/comicfx.js?v=93"></script>
+<script src="src/specials.js?v=93"></script>
+<script src="src/touch.js?v=93"></script>
+<script src="src/tutorial.js?v=93"></script>
+<script src="src/crowds.js?v=93"></script>
+<script src="src/events.js?v=93"></script>
+<script src="src/photos.js?v=93"></script>
+<script src="src/districts.js?v=93"></script>
+<script src="src/unlocks.js?v=93"></script>
+<script src="src/city.js?v=93"></script>
+<script src="src/lighting.js?v=93"></script>
+<script src="src/hero.js?v=93"></script>
+<script src="src/traffic.js?v=93"></script>
+<script src="src/landmarks.js?v=93"></script>
+<script src="src/minimap.js?v=93"></script>
+<script src="src/pigeons.js?v=93"></script>
+<script src="src/audio.js?v=93"></script>
+<script src="src/player.js?v=93"></script>
+<script src="src/main.js?v=93"></script>
 </body>
 </html>

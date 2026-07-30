@@ -297,6 +297,7 @@
       if (GAME.unlocks && !GAME.unlocks.has(k)) {
         const el = $('unlockHint');
         if (el) el.textContent = '\u{1F512} ' + GAME.unlocks.clue(k);
+        updateSuitCard(k);          // still show the locked suit's details (mobile has no hover)
         return;
       }
       skinRow.querySelectorAll('button').forEach(b => b.classList.remove('sel'));
@@ -305,9 +306,39 @@
       if (el) el.textContent = '';
       hero.setSkin(k);
       GAME.applyNoir();
+      selectedSkin = k; updateSuitCard(k);
     });
+    // desktop: hovering a suit previews its card, leaving reverts to the pick
+    btn.addEventListener('mouseenter', () => updateSuitCard(btn.dataset.v));
+    btn.addEventListener('mouseleave', () => updateSuitCard(selectedSkin));
   });
+
+  // per-suit blurbs shown in the home-page description card
+  const SUIT_DESC = {
+    classic:  { tag: 'Tom Holland · MCU',             special: '<b>Web-wings glide</b> — hold K (or hold, on mobile) to spread the underarm webbing and soar between towers.' },
+    black:    { tag: 'Tobey Maguire · Symbiote',      special: '<b>Symbiote-amplified</b> — higher jumps, wilder swings, and sharper mid-air steering.' },
+    iron:     { tag: 'Iron Spider · MCU',             special: '<b>Waldo dash (G)</b> — four mechanical legs lunge you forward and grip walls, cracking the concrete where they strike.' },
+    miles:    { tag: 'Miles Morales · Spider-Verse',  special: '<b>Venom Blast</b> — a bio-electric shockwave detonates on every hard landing.' },
+    y2099:    { tag: "Miguel O'Hara · 2099",          special: '<b>Bullet-time</b> — the world automatically slows at the apex of every jump.' },
+    tasm:     { tag: 'Andrew Garfield · Amazing',     special: '<b>Zip-lines & trampolines (G)</b> — string a walkable line between rooftops, or drop a web-net to bounce sky-high.' },
+    upgraded: { tag: 'Tom Holland · Far From Home',   special: '<b>Spider-Sense (G)</b> — a focus pulse: brief slow-mo that reveals nearby easter eggs through the walls.' },
+    noir:     { tag: 'Spider-Man Noir · Spider-Verse',special: '<b>Noir mode</b> — turns the city black-and-white with film grain, a wind-blown trench coat, and comic sound-effects.' },
+  };
+  let selectedSkin = GAME.settings.skin || 'classic';
+  function updateSuitCard(k) {
+    const def = GAME.SKINS[k] || {}, d = SUIT_DESC[k] || {};
+    if ($('suitName')) $('suitName').textContent = def.label || k;
+    if ($('suitTag')) $('suitTag').textContent = d.tag || '';
+    if ($('suitSpecial')) $('suitSpecial').innerHTML = d.special || '';
+    const dot = $('suitDot');
+    if (dot && def.primary) dot.style.background = '#' + ((def.primary.color || 0) >>> 0).toString(16).padStart(6, '0');
+    const locked = GAME.unlocks && !GAME.unlocks.has(k);
+    if ($('suitLock')) $('suitLock').textContent = locked
+      ? '\u{1F512} ' + (GAME.unlocks.clue ? GAME.unlocks.clue(k) : 'Locked') : '';
+  }
+  GAME._updateSuitCard = updateSuitCard;
   GAME.refreshSuitLocks();
+  { const sb = skinRow.querySelector('button.sel'); selectedSkin = sb ? sb.dataset.v : 'classic'; updateSuitCard(selectedSkin); }
 
   // --- touch controls + first-run interactive tutorial ---
   try {
