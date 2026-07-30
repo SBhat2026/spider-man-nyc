@@ -3,7 +3,10 @@
 <head>
 <meta charset="utf-8">
 <title>Spider-Man: NYC</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
   html, body { margin: 0; padding: 0; overflow: hidden; background: #000; height: 100%;
                font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; }
@@ -57,9 +60,35 @@
   #startBtn:hover { filter: brightness(1.15); }
   #optSkin button.locked { opacity: .45; cursor: help; }
   #unlockHint { min-height: 18px; margin-top: 6px; font-size: 12.5px; color: #ffd07a; opacity: .9; }
-  #controls { margin-top: 26px; font-size: 12.5px; line-height: 1.9; opacity: .6; }
+  #controls { margin-top: 20px; font-size: 12.5px; line-height: 1.7; opacity: .6; }
   #controls b { color: #ffb894; font-weight: 600; }
+  #controls summary { cursor: pointer; color: #ffb894; opacity: .85; list-style: none; }
+  #controls .lead { margin-bottom: 8px; }
   #loadmsg { margin-top: 18px; font-size: 12px; opacity: .5; }
+
+  /* ---------- Touch joystick ---------- */
+  #tj-base { position: fixed; width: 132px; height: 132px; border-radius: 50%;
+             border: 2px solid rgba(255,255,255,.28); background: rgba(255,255,255,.06);
+             z-index: 6; pointer-events: none; display: none; bottom: 90px; left: 40px;
+             touch-action: none; }
+  #tj-base.right { left: auto; right: 40px; }
+  #tj-knob { position: absolute; width: 58px; height: 58px; border-radius: 50%;
+             left: 35px; top: 35px; background: rgba(255,95,60,.72);
+             border: 2px solid rgba(255,255,255,.5); }
+  /* ---------- Interactive tutorial ---------- */
+  #tutorial { position: fixed; top: 0; left: 0; right: 0; z-index: 8; display: none;
+              pointer-events: none; text-align: center; padding-top: 24px; }
+  #tutorial .card { display: inline-block; pointer-events: auto; color: #fff;
+                    background: rgba(12,10,20,.74); border: 1.5px solid rgba(255,255,255,.16);
+                    border-radius: 14px; padding: 13px 22px; max-width: 82vw;
+                    box-shadow: 0 8px 30px rgba(0,0,0,.5); transition: border-color .2s; }
+  #tutorial.ok .card { border-color: #52d17a; }
+  #tut-text { font-size: 15.5px; letter-spacing: .01em; }
+  #tut-prog { font-size: 11px; letter-spacing: .3em; opacity: .55; margin-top: 6px; text-transform: uppercase; }
+  #tut-skip { margin-top: 10px; font-size: 12px; color: #ffd07a; background: none;
+              border: 1px solid rgba(255,208,122,.4); border-radius: 8px; padding: 5px 14px;
+              cursor: pointer; pointer-events: auto; }
+  #optTouch { display: none; }
 </style>
 </head>
 <body>
@@ -72,6 +101,13 @@
   <div id="speed"></div>
   <div id="hint"></div>
 </div>
+
+<div id="tj-base"><div id="tj-knob"></div></div>
+<div id="tutorial"><div class="card">
+  <div id="tut-text"></div>
+  <div id="tut-prog"></div>
+  <button id="tut-skip">Skip tutorial</button>
+</div></div>
 
 <div id="menu">
   <div class="panel">
@@ -100,41 +136,53 @@
       <button data-v="upgraded">Upgraded</button>
       <button data-v="noir">Noir</button>
     </div>
+    <div class="optrow" id="optTouch">
+      <span class="lbl">Joystick side (touch)</span>
+      <button data-v="left" class="sel">Left thumb</button>
+      <button data-v="right">Right thumb</button>
+    </div>
     <div id="unlockHint"></div>
     <button id="startBtn">SWING</button>
     <div id="controls">
-      <b>Trackpad / Mouse</b> look &nbsp;·&nbsp; <b>Hold SPACE</b> web swing, release at the arc top &nbsp;·&nbsp;
-      <b>W / S</b> reel rope in / out &nbsp;·&nbsp; <b>A D</b> lean &nbsp;·&nbsp; <b>F</b>+dir tricks (W swan · S double · A/D corkscrew) / <b>Q</b> roll / <b>E</b> spread (<b>W+E</b> superman)<br>
-      Touch a wall mid-air to <b>crawl</b> (WASD), <b>SPACE</b> leaps off, <b>C</b> near the top to hang upside-down &nbsp;·&nbsp;
-      Skim a wall at speed to <b>wall-run</b>, <b>SPACE</b> bounces off &nbsp;·&nbsp; <b>hold K</b> web-wings glide (Stark) &nbsp;·&nbsp; <b>G</b> suit special &nbsp;·&nbsp; <b>SHIFT</b> sprint &nbsp;·&nbsp; <b>P</b> photo mode<br>
-      <b>SPACE</b> jumps &nbsp;·&nbsp; <b>T</b> time of day &nbsp;·&nbsp; <b>F/Q/E</b> flip / roll / spread &nbsp;·&nbsp; <b>.</b> big map &nbsp;·&nbsp; <b>N</b> next suit &nbsp;·&nbsp; <b>M</b> mute &nbsp;·&nbsp; <b>R</b> respawn &nbsp;·&nbsp; <b>ESC</b> menu
+      <div class="lead">A quick <b>interactive tutorial</b> will teach you the controls the first time you swing.</div>
+      <details>
+        <summary>Full controls &amp; tips</summary>
+        <div style="margin-top:8px">
+        <b>Desktop</b> — <b>Mouse</b> look &nbsp;·&nbsp; <b>hold SPACE</b> web swing (release at the arc top), <b>tap SPACE</b> jump &nbsp;·&nbsp;
+        <b>W/S</b> reel rope &nbsp;·&nbsp; <b>A/D</b> lean &nbsp;·&nbsp; <b>F</b>+dir tricks (W swan · S double · A/D corkscrew) / <b>Q</b> roll / <b>E</b> spread &nbsp;·&nbsp;
+        <b>hold K</b> glide (Stark) &nbsp;·&nbsp; <b>G</b> suit special &nbsp;·&nbsp; <b>P</b> photo &nbsp;·&nbsp; <b>N</b> suit &nbsp;·&nbsp; <b>T</b> time &nbsp;·&nbsp; <b>.</b> map &nbsp;·&nbsp; <b>R</b> respawn<br>
+        <b>Touch</b> — one <b>joystick</b> (side configurable above): <b>tap</b> jump · <b>hold</b> swing · <b>flick</b> mid-air to flip &nbsp;·&nbsp; the other thumb <b>drags to look</b>, <b>taps to jump</b>.
+        </div>
+      </details>
     </div>
     <div id="loadmsg">Real building footprints &amp; streets © OpenStreetMap contributors</div>
   </div>
 </div>
 
-<script src="lib/three.min.js?v=91"></script>
-<script src="data/city_midtown.js?v=91"></script>
-<script src="data/city_fidi.js?v=91"></script>
-<script src="src/config.js?v=91"></script>
-<script src="src/cityplan.js?v=91"></script>
-<script src="src/cloak.js?v=91"></script>
-<script src="src/comicfx.js?v=91"></script>
-<script src="src/specials.js?v=91"></script>
-<script src="src/crowds.js?v=91"></script>
-<script src="src/events.js?v=91"></script>
-<script src="src/photos.js?v=91"></script>
-<script src="src/districts.js?v=91"></script>
-<script src="src/unlocks.js?v=91"></script>
-<script src="src/city.js?v=91"></script>
-<script src="src/lighting.js?v=91"></script>
-<script src="src/hero.js?v=91"></script>
-<script src="src/traffic.js?v=91"></script>
-<script src="src/landmarks.js?v=91"></script>
-<script src="src/minimap.js?v=91"></script>
-<script src="src/pigeons.js?v=91"></script>
-<script src="src/audio.js?v=91"></script>
-<script src="src/player.js?v=91"></script>
-<script src="src/main.js?v=91"></script>
+<script src="lib/three.min.js?v=92"></script>
+<script src="data/city_midtown.js?v=92"></script>
+<script src="data/city_fidi.js?v=92"></script>
+<script src="src/config.js?v=92"></script>
+<script src="src/cityplan.js?v=92"></script>
+<script src="src/cloak.js?v=92"></script>
+<script src="src/comicfx.js?v=92"></script>
+<script src="src/specials.js?v=92"></script>
+<script src="src/touch.js?v=92"></script>
+<script src="src/tutorial.js?v=92"></script>
+<script src="src/crowds.js?v=92"></script>
+<script src="src/events.js?v=92"></script>
+<script src="src/photos.js?v=92"></script>
+<script src="src/districts.js?v=92"></script>
+<script src="src/unlocks.js?v=92"></script>
+<script src="src/city.js?v=92"></script>
+<script src="src/lighting.js?v=92"></script>
+<script src="src/hero.js?v=92"></script>
+<script src="src/traffic.js?v=92"></script>
+<script src="src/landmarks.js?v=92"></script>
+<script src="src/minimap.js?v=92"></script>
+<script src="src/pigeons.js?v=92"></script>
+<script src="src/audio.js?v=92"></script>
+<script src="src/player.js?v=92"></script>
+<script src="src/main.js?v=92"></script>
 </body>
 </html>

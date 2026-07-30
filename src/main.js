@@ -112,6 +112,15 @@
   let camYaw = Math.PI, camPitch = -0.18, lastMouseT = 0;
   let camZoom = 1;   // scroll-wheel / two-finger zoom multiplier on camera dist
   let playing = false;
+  // --- touch input bridge: the on-screen joystick writes movement/jump/swing
+  // into `keys`, and drag-look feeds camera yaw/pitch through here ---
+  GAME.keys = keys;
+  GAME.lookDelta = (dx, dy) => {
+    camYaw -= dx;
+    camPitch = Math.max(GAME.CAM.pitchMin, Math.min(GAME.CAM.pitchMax, camPitch - dy));
+    lastMouseT = perf();
+  };
+  GAME.isPlaying = () => playing;
   // photo mode: world freezes, camera flies free
   const photo = { on: false, pos: new THREE.Vector3(), yaw: 0, pitch: 0 };
   // camera feel bus — anything can kick it: sweet-spot release, near-miss,
@@ -239,6 +248,7 @@
       playing = false;
       $('menu').style.display = 'flex';
       if (GAME.minimap) GAME.minimap.cv.style.display = GAME.minimap.cp.style.display = 'none';
+      if (GAME.touch) GAME.touch.setPlaying(false);
       for (const k in keys) keys[k] = 0;
     }
   });
@@ -299,6 +309,23 @@
   });
   GAME.refreshSuitLocks();
 
+  // --- touch controls + first-run interactive tutorial ---
+  try {
+    const savedSide = localStorage.getItem('spidey.joystick.v1');
+    if (savedSide) GAME.settings.joystickSide = savedSide;
+  } catch (e) {}
+  if (!GAME.settings.joystickSide) GAME.settings.joystickSide = 'left';
+  if (GAME.Touch) GAME.touch = new GAME.Touch();
+  if (GAME.Tutorial) GAME.tutorial = new GAME.Tutorial();
+  const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+  if (isTouch && $('optTouch')) {
+    $('optTouch').style.display = 'block';
+    $('optTouch').querySelectorAll('button').forEach(b => {
+      b.classList.toggle('sel', b.dataset.v === GAME.settings.joystickSide);
+    });
+    wireRow('optTouch', v => { if (GAME.touch) GAME.touch.setSide(v); });
+  }
+
   const audio = GAME.audio = new GAME.GameAudio();
   $('startBtn').addEventListener('click', () => {
     const zoneBtn = $('optZone').querySelector('.sel');
@@ -308,6 +335,8 @@
     playing = true;
     GAME.applyNoir();
     if (GAME.minimap) GAME.minimap.cv.style.display = GAME.minimap.cp.style.display = 'block';
+    if (GAME.touch) GAME.touch.setPlaying(true);
+    if (GAME.tutorial) GAME.tutorial.start();
     audio.start();   // user gesture — safe to open the AudioContext here
     try { renderer.domElement.requestPointerLock(); } catch (err) {}
     hint('Hold SPACE to swing — release at the top of the arc');
@@ -656,6 +685,8 @@
     if (GAME.landmarks) GAME.landmarks.update(dt, rig);
     if (GAME.comicFX) GAME.comicFX.update(rawDt);
     if (GAME.specials) GAME.specials.update(rawDt, playing ? player : null);
+    if (GAME.touch) GAME.touch.update(rawDt);
+    if (playing && GAME.tutorial) GAME.tutorial.update();
     if (playing && GAME.crowds && player) GAME.crowds.update(dt, player.pos);
     if (playing && GAME.events && player) GAME.events.update(dt, player.pos);
     if (GAME.districts) GAME.districts.update(dt);
