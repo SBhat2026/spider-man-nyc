@@ -62,20 +62,30 @@
                        color: #fff; font-weight: 600; box-shadow: 0 4px 16px rgba(226,59,70,.34); }
   #optSkin button { padding: 8px 13px; font-size: 13px; }
   #optSkin button.locked { opacity: .5; cursor: help; }
-  /* suit description card */
-  #suitCard { display: flex; gap: 13px; align-items: flex-start; text-align: left;
-              max-width: 500px; margin: 8px auto 2px; padding: 15px 17px;
-              background: rgba(255,255,255,.045); border: 1px solid rgba(255,255,255,.12);
-              border-radius: 14px; }
-  #suitDot { width: 30px; height: 30px; border-radius: 50%; flex: 0 0 auto; margin-top: 3px;
-             border: 2px solid rgba(255,255,255,.55); box-shadow: 0 0 14px rgba(255,255,255,.14); }
+  /* suit description card — rotating 3D model + details */
+  #suitCard { display: flex; gap: 16px; align-items: center; text-align: left;
+              max-width: 520px; margin: 10px auto 2px; padding: 14px 18px;
+              background: linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.03));
+              border: 1px solid rgba(255,255,255,.13); border-radius: 16px; }
+  #suitStage { position: relative; flex: 0 0 auto; width: 128px; height: 164px;
+               border-radius: 12px; overflow: hidden;
+               background: radial-gradient(ellipse at 50% 78%, rgba(255,138,92,.20), rgba(255,255,255,.02) 62%); }
+  #suitModel { width: 100%; height: 100%; display: block; }
+  #suitDot { position: absolute; left: 8px; top: 8px; width: 14px; height: 14px;
+             border-radius: 50%; border: 1.5px solid rgba(255,255,255,.6); }
   #suitCard .body { flex: 1; min-width: 0; }
-  #suitName { font-size: 17px; font-weight: 700; }
+  #suitName { font-size: 18px; font-weight: 700; }
   #suitTag { font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase; opacity: .55;
-             display: block; margin-top: 2px; }
-  #suitSpecial { font-size: 13px; opacity: .88; margin-top: 8px; line-height: 1.5; }
+             display: block; margin-top: 3px; }
+  #suitSpecial { font-size: 13px; opacity: .88; margin-top: 9px; line-height: 1.5; }
   #suitSpecial b { color: #ffb894; font-weight: 600; }
-  #suitLock { font-size: 12px; color: #ffd07a; margin-top: 7px; }
+  #suitLock { font-size: 12px; color: #ffd07a; margin-top: 8px; }
+  #suitMastery { margin-top: 9px; font-size: 11px; opacity: .72; display: flex;
+                 align-items: center; gap: 8px; }
+  #suitBar { flex: 0 0 62px; height: 4px; border-radius: 2px;
+             background: rgba(255,255,255,.16); overflow: hidden; }
+  #suitBar i { display: block; height: 100%; width: 0;
+               background: linear-gradient(90deg,#ff9a5c,#ffd07a); transition: width .3s; }
   #startBtn { margin-top: 26px; font-size: 18px; padding: 15px 60px; border-radius: 13px;
               background: linear-gradient(180deg, #ff7a4d, #d3303f); border: none; color: #fff;
               font-weight: 700; letter-spacing: .1em; cursor: pointer; pointer-events: auto;
@@ -83,6 +93,12 @@
   #startBtn:hover { filter: brightness(1.12); }
   #startBtn:active { transform: translateY(1px); }
   #unlockHint { min-height: 18px; margin-top: 8px; font-size: 12.5px; color: #ffd07a; opacity: .9; }
+  #dailyCard { max-width: 520px; margin: 14px auto 0; padding: 11px 16px; font-size: 12.5px;
+               border: 1px solid rgba(255,200,60,.28); border-radius: 12px;
+               background: rgba(255,200,60,.07); color: #ffe2a8; line-height: 1.5; }
+  #dailyCard b { color: #ffd07a; }
+  #dailyCard .k { display: inline-block; border: 1px solid rgba(255,255,255,.3);
+                  border-radius: 5px; padding: 0 6px; font-size: 11px; opacity: .85; }
   #controls { margin-top: 20px; font-size: 12.5px; line-height: 1.7; opacity: .6; }
   #controls b { color: #ffb894; font-weight: 600; }
   #controls summary { cursor: pointer; color: #ffb894; opacity: .85; list-style: none; }
@@ -90,14 +106,17 @@
   #loadmsg { margin-top: 18px; font-size: 12px; opacity: .5; }
 
   /* ---------- Touch joystick ---------- */
+  /* Muscle-memory tools — kept faint so they never fight the city for
+     attention. They lift to ~55% only while the thumb is actually down. */
   #tj-base { position: fixed; width: 132px; height: 132px; border-radius: 50%;
-             border: 2px solid rgba(255,255,255,.28); background: rgba(255,255,255,.06);
+             border: 2px solid rgba(255,255,255,.5); background: rgba(255,255,255,.10);
              z-index: 6; pointer-events: none; display: none; bottom: 90px; left: 40px;
-             touch-action: none; }
+             touch-action: none; opacity: .2; transition: opacity .25s; }
   #tj-base.right { left: auto; right: 40px; }
+  #tj-base.hot { opacity: .55; }
   #tj-knob { position: absolute; width: 58px; height: 58px; border-radius: 50%;
-             left: 35px; top: 35px; background: rgba(255,95,60,.72);
-             border: 2px solid rgba(255,255,255,.5); }
+             left: 35px; top: 35px; background: rgba(255,95,60,.85);
+             border: 2px solid rgba(255,255,255,.6); }
   /* ---------- Interactive tutorial ---------- */
   #tutorial { position: fixed; top: 0; left: 0; right: 0; z-index: 8; display: none;
               pointer-events: none; text-align: center; padding-top: 24px; }
@@ -112,6 +131,45 @@
               border: 1px solid rgba(255,208,122,.4); border-radius: 8px; padding: 5px 14px;
               cursor: pointer; pointer-events: auto; }
   #optTouch { display: none; }
+
+  /* ---------- Mobile / small screens ---------- */
+  @media (max-width: 620px) {
+    #menu .panel { padding: 26px 14px 34px; }
+    #menu .brand { font-size: 9.5px; letter-spacing: .34em; }
+    #menu .tagline { font-size: 12.5px; margin: 11px auto 20px; max-width: 330px; }
+    .optrow { margin: 13px 0; }
+    .optrow .lbl { font-size: 10px; letter-spacing: .24em; margin-bottom: 7px; }
+    /* full-width touch targets that never crowd, laid out as a wrapping grid */
+    .optrow .chips { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+    .optrow button { margin: 0; padding: 12px 8px; font-size: 13px; width: 100%;
+                     box-sizing: border-box; min-height: 44px; }
+    #optSkin button { padding: 11px 6px; font-size: 12.5px; }
+    #optSkin .chips { grid-template-columns: 1fr 1fr; }
+    /* model on top, text beneath — side-by-side is too cramped under 620px */
+    #suitCard { flex-direction: column; align-items: center; text-align: center;
+                gap: 10px; padding: 14px 15px; max-width: 340px; }
+    #suitStage { width: 118px; height: 140px; }
+    #suitCard .body { width: 100%; }
+    #suitSpecial { font-size: 12.5px; }
+    #startBtn { width: 100%; max-width: 340px; padding: 17px 0; font-size: 17px; }
+    #controls { font-size: 12px; }
+    #loadmsg { font-size: 10.5px; }
+    /* compact tutorial banner — it sits over gameplay, so keep it small */
+    #tutorial { padding-top: 54px; }
+    #tutorial .card { padding: 10px 15px; max-width: 90vw; }
+    #tut-text { font-size: 13.5px; }
+    #tut-prog { font-size: 10px; margin-top: 4px; }
+    #tut-skip { margin-top: 7px; font-size: 11px; padding: 4px 11px; }
+    /* keep the stick clear of the home-indicator area */
+    #tj-base { bottom: max(70px, env(safe-area-inset-bottom, 0px) + 60px); }
+  }
+  @media (max-width: 620px) and (orientation: landscape) {
+    /* phone held sideways: the menu must still fit without endless scrolling */
+    #menu .panel { padding: 16px 14px 24px; }
+    #menu h1 { font-size: 34px; }
+    #menu .tagline { margin: 8px auto 14px; }
+    #suitStage { width: 96px; height: 116px; }
+  }
 </style>
 </head>
 <body>
@@ -139,42 +197,55 @@
     <div class="tagline">Web-sling across <b>18,000 real Manhattan buildings</b> — no combat, just the swing, the skyline, and secrets to hunt down.</div>
     <div class="optrow" id="optZone">
       <span class="lbl">District — real NYC street plan</span>
-      <button data-v="midtown" class="sel">Manhattan + Central Park</button>
-      <button data-v="fidi">Financial District</button>
+      <div class="chips">
+        <button data-v="midtown" class="sel">Manhattan + Central Park</button>
+        <button data-v="fidi">Financial District</button>
+      </div>
     </div>
     <div class="optrow" id="optTime">
       <span class="lbl">Time of day</span>
-      <button data-v="sunset" class="sel">Dramatic Sunset</button>
-      <button data-v="night">Times Square Night</button>
-      <button data-v="day">Bright Daylight</button>
-      <button data-v="cycle">Day Cycle</button>
+      <div class="chips">
+        <button data-v="sunset" class="sel">Dramatic Sunset</button>
+        <button data-v="night">Times Square Night</button>
+        <button data-v="day">Bright Daylight</button>
+        <button data-v="cycle">Day Cycle</button>
+      </div>
     </div>
     <div class="optrow" id="optSkin">
       <span class="lbl">Suit</span>
-      <button data-v="classic" class="sel">Stark</button>
-      <button data-v="black">Symbiote</button>
-      <button data-v="iron">Iron Spider</button>
-      <button data-v="miles">Miles Morales</button>
-      <button data-v="y2099">2099</button>
-      <button data-v="tasm">Amazing</button>
-      <button data-v="upgraded">Upgraded</button>
-      <button data-v="noir">Noir</button>
+      <div class="chips">
+        <button data-v="classic" class="sel">Stark</button>
+        <button data-v="black">Symbiote</button>
+        <button data-v="iron">Iron Spider</button>
+        <button data-v="miles">Miles Morales</button>
+        <button data-v="y2099">2099</button>
+        <button data-v="tasm">Amazing</button>
+        <button data-v="upgraded">Upgraded</button>
+        <button data-v="noir">Noir</button>
+      </div>
     </div>
     <div id="suitCard">
-      <div id="suitDot"></div>
+      <div id="suitStage">
+        <canvas id="suitModel"></canvas>
+        <div id="suitDot"></div>
+      </div>
       <div class="body">
         <span id="suitName"></span>
         <span id="suitTag"></span>
         <div id="suitSpecial"></div>
+        <div id="suitMastery"><span id="suitBar"><i></i></span><span id="suitMasteryTxt"></span></div>
         <div id="suitLock"></div>
       </div>
     </div>
     <div class="optrow" id="optTouch">
       <span class="lbl">Joystick side (touch)</span>
-      <button data-v="left" class="sel">Left thumb</button>
-      <button data-v="right">Right thumb</button>
+      <div class="chips">
+        <button data-v="left" class="sel">Left thumb</button>
+        <button data-v="right">Right thumb</button>
+      </div>
     </div>
     <div id="unlockHint"></div>
+    <div id="dailyCard"></div>
     <button id="startBtn">SWING</button>
     <div id="controls">
       <div class="lead">A quick <b>interactive tutorial</b> will teach you the controls the first time you swing.</div>
@@ -183,7 +254,8 @@
         <div style="margin-top:8px">
         <b>Desktop</b> — <b>Mouse</b> look &nbsp;·&nbsp; <b>hold SPACE</b> web swing (release at the arc top), <b>tap SPACE</b> jump &nbsp;·&nbsp;
         <b>W/S</b> reel rope &nbsp;·&nbsp; <b>A/D</b> lean &nbsp;·&nbsp; <b>F</b>+dir tricks (W swan · S double · A/D corkscrew) / <b>Q</b> roll / <b>E</b> spread &nbsp;·&nbsp;
-        <b>hold K</b> glide (Stark) &nbsp;·&nbsp; <b>G</b> suit special &nbsp;·&nbsp; <b>P</b> photo &nbsp;·&nbsp; <b>N</b> suit &nbsp;·&nbsp; <b>T</b> time &nbsp;·&nbsp; <b>.</b> map &nbsp;·&nbsp; <b>R</b> respawn<br>
+        <b>hold K</b> glide (Stark) &nbsp;·&nbsp; <b>G</b> suit special &nbsp;·&nbsp; <b>B</b> swing of the day &nbsp;·&nbsp; <b>P</b> photo &nbsp;·&nbsp; <b>N</b> suit &nbsp;·&nbsp; <b>T</b> time &nbsp;·&nbsp; <b>.</b> map &nbsp;·&nbsp; <b>R</b> respawn<br>
+        Swing through the glowing <b>ⓘ fragments</b> above real landmarks to collect <b>City Secrets</b>.<br>
         <b>Touch</b> — one <b>joystick</b> (side configurable above): <b>tap</b> jump · <b>hold</b> swing · <b>flick</b> mid-air to flip &nbsp;·&nbsp; the other thumb <b>drags to look</b>, <b>taps to jump</b>.
         </div>
       </details>
@@ -192,30 +264,34 @@
   </div>
 </div>
 
-<script src="lib/three.min.js?v=93"></script>
-<script src="data/city_midtown.js?v=93"></script>
-<script src="data/city_fidi.js?v=93"></script>
-<script src="src/config.js?v=93"></script>
-<script src="src/cityplan.js?v=93"></script>
-<script src="src/cloak.js?v=93"></script>
-<script src="src/comicfx.js?v=93"></script>
-<script src="src/specials.js?v=93"></script>
-<script src="src/touch.js?v=93"></script>
-<script src="src/tutorial.js?v=93"></script>
-<script src="src/crowds.js?v=93"></script>
-<script src="src/events.js?v=93"></script>
-<script src="src/photos.js?v=93"></script>
-<script src="src/districts.js?v=93"></script>
-<script src="src/unlocks.js?v=93"></script>
-<script src="src/city.js?v=93"></script>
-<script src="src/lighting.js?v=93"></script>
-<script src="src/hero.js?v=93"></script>
-<script src="src/traffic.js?v=93"></script>
-<script src="src/landmarks.js?v=93"></script>
-<script src="src/minimap.js?v=93"></script>
-<script src="src/pigeons.js?v=93"></script>
-<script src="src/audio.js?v=93"></script>
-<script src="src/player.js?v=93"></script>
-<script src="src/main.js?v=93"></script>
+<script src="lib/three.min.js?v=98"></script>
+<script src="data/city_midtown.js?v=98"></script>
+<script src="data/city_fidi.js?v=98"></script>
+<script src="src/config.js?v=98"></script>
+<script src="src/cityplan.js?v=98"></script>
+<script src="src/cloak.js?v=98"></script>
+<script src="src/comicfx.js?v=98"></script>
+<script src="src/specials.js?v=98"></script>
+<script src="src/suitpreview.js?v=98"></script>
+<script src="src/secrets.js?v=98"></script>
+<script src="src/daily.js?v=98"></script>
+<script src="src/mastery.js?v=98"></script>
+<script src="src/touch.js?v=98"></script>
+<script src="src/tutorial.js?v=98"></script>
+<script src="src/crowds.js?v=98"></script>
+<script src="src/events.js?v=98"></script>
+<script src="src/photos.js?v=98"></script>
+<script src="src/districts.js?v=98"></script>
+<script src="src/unlocks.js?v=98"></script>
+<script src="src/city.js?v=98"></script>
+<script src="src/lighting.js?v=98"></script>
+<script src="src/hero.js?v=98"></script>
+<script src="src/traffic.js?v=98"></script>
+<script src="src/landmarks.js?v=98"></script>
+<script src="src/minimap.js?v=98"></script>
+<script src="src/pigeons.js?v=98"></script>
+<script src="src/audio.js?v=98"></script>
+<script src="src/player.js?v=98"></script>
+<script src="src/main.js?v=98"></script>
 </body>
 </html>

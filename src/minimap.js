@@ -5,7 +5,16 @@
 // the map. Typing 1s2i3d4d reveals every easter egg location.
 (function () {
 
-  const SIZE = 236;          // small-map on-screen px
+  // Small-map size scales with the viewport: a fixed 236px eats ~63% of a
+  // 375px phone screen. Phones get a compact map tucked into the corner.
+  function mapSize() {
+    const vw = Math.min(window.innerWidth, window.innerHeight);
+    if (vw < 480) return 92;
+    if (vw < 820) return 140;
+    return 236;
+  }
+  function mapInset() { return Math.min(window.innerWidth, window.innerHeight) < 480 ? 10 : 14; }
+  let SIZE = mapSize();
   const VIEW = 520;          // metres across in follow mode
 
   class Minimap {
@@ -22,14 +31,29 @@
         cv.id = 'minimap';
         document.body.appendChild(cv);
       }
+      const ins = mapInset();
       cv.style.cssText =
-        'position:fixed;right:14px;bottom:14px;width:' + SIZE + 'px;height:' + SIZE + 'px;' +
+        'position:fixed;right:' + ins + 'px;bottom:' + ins + 'px;' +
+        'width:' + SIZE + 'px;height:' + SIZE + 'px;' +
         'border-radius:50%;border:1px solid rgba(255,255,255,0.22);' +
         'background:rgba(10,12,18,0.55);z-index:30;pointer-events:none;' +
+        'opacity:0.82;transition:opacity .3s;' +
         'box-shadow:0 4px 18px rgba(0,0,0,0.45)';
       cv.width = cv.height = SIZE * 2;               // retina
       this.cv = cv;
       this.ctx = cv.getContext('2d');
+      // keep the map proportional when the phone rotates / window resizes
+      this._onResize = () => {
+        if (this.full) return;
+        SIZE = mapSize();
+        const i2 = mapInset();
+        cv.style.width = cv.style.height = SIZE + 'px';
+        cv.style.right = i2 + 'px'; cv.style.bottom = i2 + 'px';
+        cv.width = cv.height = SIZE * 2;
+        cp.style.width = Math.min(400, window.innerWidth - 40) + 'px';
+      };
+      window.addEventListener('resize', this._onResize);
+      window.addEventListener('orientationchange', this._onResize);
 
       // ---- DOM: compass strip ----
       let cp = document.getElementById('compass');
@@ -40,7 +64,7 @@
       }
       cp.style.cssText =
         'position:fixed;top:12px;left:50%;transform:translateX(-50%);' +
-        'width:400px;height:34px;border-radius:17px;' +
+        'width:' + Math.min(400, window.innerWidth - 40) + 'px;height:34px;border-radius:17px;' +
         'background:rgba(10,12,18,0.38);border:1px solid rgba(255,255,255,0.14);' +
         'z-index:30;pointer-events:none';
       cp.width = 800; cp.height = 68;
@@ -132,8 +156,9 @@
         cv.style.background = 'rgba(8,10,15,0.92)';
         cv.width = cv.height = Math.min(1600, px * 2);
       } else {
+        SIZE = mapSize();
         cv.style.width = cv.style.height = SIZE + 'px';
-        cv.style.right = '14px'; cv.style.bottom = '14px';
+        cv.style.right = mapInset() + 'px'; cv.style.bottom = mapInset() + 'px';
         cv.style.transform = 'none';
         cv.style.borderRadius = '50%';
         cv.style.background = 'rgba(10,12,18,0.55)';
@@ -297,6 +322,8 @@
 
     dispose() {
       window.removeEventListener('keydown', this._onKey);
+      window.removeEventListener('resize', this._onResize);
+      window.removeEventListener('orientationchange', this._onResize);
       if (this.cv && this.cv.parentNode) this.cv.parentNode.removeChild(this.cv);
       if (this.cp && this.cp.parentNode) this.cp.parentNode.removeChild(this.cp);
     }

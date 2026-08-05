@@ -61,6 +61,8 @@
   if (GAME.ComicFX) GAME.comicFX = new GAME.ComicFX(scene);
   // suit-special world effects (cracks, trampolines, zip-lines, spider-sense)
   if (GAME.Specials) GAME.specials = new GAME.Specials(scene);
+  // per-suit mastery progression (distance swung → cosmetic perks)
+  if (GAME.Mastery) GAME.mastery = new GAME.Mastery();
 
   let city = null, traffic = null, pigeons = null, player = null;
   function setZone(key) {
@@ -89,6 +91,12 @@
     GAME.events = new GAME.StreetEvents(city, scene, pigeons);
     GAME.photos = new GAME.PhotoChallenges(GAME.landmarks, city);
     GAME.districts = new GAME.Districts(city);
+    // City Secrets: collectible landmark facts pinned to real coordinates
+    if (GAME.secrets) GAME.secrets.dispose();
+    if (GAME.CitySecrets) GAME.secrets = new GAME.CitySecrets(GAME.landmarks, city, scene);
+    // Swing of the Day: date-seeded waypoint route
+    if (GAME.daily) GAME.daily.dispose();
+    if (GAME.DailyRun) GAME.daily = new GAME.DailyRun(city, scene);
     if (!player) player = new GAME.Player(city, hero);
     else player.setCity(city);
     GAME.player = player;      // exposed for debug/minimap tooling
@@ -121,6 +129,10 @@
     lastMouseT = perf();
   };
   GAME.isPlaying = () => playing;
+  // pinch ratio >1 = fingers spreading = pull the camera out (speed-stretch)
+  GAME.zoomDelta = (ratio) => {
+    camZoom = Math.max(0.45, Math.min(2.8, camZoom / Math.max(0.2, ratio)));
+  };
   // photo mode: world freezes, camera flies free
   const photo = { on: false, pos: new THREE.Vector3(), yaw: 0, pitch: 0 };
   // camera feel bus — anything can kick it: sweet-spot release, near-miss,
@@ -164,6 +176,10 @@
       hint('Suit: ' + hero.cycleSkin()); GAME.applyNoir();
     } else if (e.code === 'KeyR') player.respawn();
     else if (e.code === 'KeyG') suitSpecial();
+    else if (e.code === 'KeyB' && GAME.daily) {
+      if (GAME.daily.active) { GAME.daily.stop(false); hint('Route abandoned'); }
+      else if (!GAME.daily.start()) hint('No route available here');
+    }
   });
   window.addEventListener('keyup', (e) => {
     const k = KEYMAP[e.code];
@@ -249,6 +265,9 @@
       $('menu').style.display = 'flex';
       if (GAME.minimap) GAME.minimap.cv.style.display = GAME.minimap.cp.style.display = 'none';
       if (GAME.touch) GAME.touch.setPlaying(false);
+      if (GAME.suitPreview) { GAME.suitPreview.resize(); GAME.suitPreview.start(); }
+      if (GAME.refreshDailyCard) GAME.refreshDailyCard();
+      if (GAME._updateSuitCard) GAME._updateSuitCard(GAME.settings.skin);
       for (const k in keys) keys[k] = 0;
     }
   });
@@ -275,8 +294,17 @@
   GAME.applyNoir = function () {
     const noir = !!(GAME.SKINS[GAME.settings.skin] || {}).noir;
     const g = $('game'), fx = $('noirfx');
-    if (g) g.style.filter = noir ? 'grayscale(1) contrast(1.08) brightness(1.03)' : '';
-    if (fx) fx.classList.toggle('on', noir);
+    // "Classic Noir" is the Noir suit's mastery perk: heavier grain, deeper
+    // contrast — the full 1930s print look rather than a light desaturation.
+    const classic = noir && GAME.mastery && GAME.mastery.has('noir-classic');
+    if (g) g.style.filter = noir
+      ? (classic ? 'grayscale(1) contrast(1.32) brightness(0.95)'
+                 : 'grayscale(1) contrast(1.08) brightness(1.03)')
+      : '';
+    if (fx) {
+      fx.classList.toggle('on', noir);
+      fx.style.opacity = classic ? '0.3' : '';
+    }
   };
   GAME.refreshSuitLocks = function () {
     skinRow.querySelectorAll('button').forEach(btn => {
@@ -327,6 +355,7 @@
   let selectedSkin = GAME.settings.skin || 'classic';
   function updateSuitCard(k) {
     const def = GAME.SKINS[k] || {}, d = SUIT_DESC[k] || {};
+    if (GAME.suitPreview) GAME.suitPreview.setSkin(k);
     if ($('suitName')) $('suitName').textContent = def.label || k;
     if ($('suitTag')) $('suitTag').textContent = d.tag || '';
     if ($('suitSpecial')) $('suitSpecial').innerHTML = d.special || '';
@@ -335,10 +364,48 @@
     const locked = GAME.unlocks && !GAME.unlocks.has(k);
     if ($('suitLock')) $('suitLock').textContent = locked
       ? '\u{1F512} ' + (GAME.unlocks.clue ? GAME.unlocks.clue(k) : 'Locked') : '';
+    // suit mastery: distance swum in this suit → cosmetic perk
+    const mRow = $('suitMastery');
+    if (mRow) {
+      if (GAME.mastery && GAME.mastery.goalFor(k) && !locked) {
+        mRow.style.display = 'flex';
+        const bar = $('suitBar');
+        if (bar && bar.firstElementChild)
+          bar.firstElementChild.style.width = (GAME.mastery.progress(k) * 100).toFixed(0) + '%';
+        if ($('suitMasteryTxt')) $('suitMasteryTxt').textContent = GAME.mastery.summary(k);
+      } else mRow.style.display = 'none';
+    }
   }
   GAME._updateSuitCard = updateSuitCard;
   GAME.refreshSuitLocks();
+  // rotating 3D suit model in the card (its own tiny GL context, menu-only)
+  if (GAME.SuitPreview && $('suitModel')) {
+    try {
+      GAME.suitPreview = new GAME.SuitPreview($('suitModel'));
+      GAME.suitPreview.start();
+      window.addEventListener('resize', () => GAME.suitPreview && GAME.suitPreview.resize());
+    } catch (e) { GAME.suitPreview = null; }
+  }
   { const sb = skinRow.querySelector('button.sel'); selectedSkin = sb ? sb.dataset.v : 'classic'; updateSuitCard(selectedSkin); }
+  // menu banner: today's route + collectible progress (refreshed on every open)
+  GAME.refreshDailyCard = function () {
+    const el = $('dailyCard');
+    if (!el) return;
+    const bits = [];
+    if (GAME.daily && GAME.daily.points && GAME.daily.points.length) {
+      const b = GAME.daily.best;
+      bits.push('<b>Swing of the Day</b> — ' + GAME.daily.points.length + ' gates' +
+                (b ? ', best <b>' + b.toFixed(1) + 's</b>' : '') +
+                ' · press <span class="k">B</span> in game to start');
+    }
+    if (GAME.secrets) {
+      const [g, a] = GAME.secrets.count();
+      if (a) bits.push('<b>City Secrets</b> — ' + g + ' / ' + a +
+                       ' landmark fragments found');
+    }
+    el.innerHTML = bits.join('<br>');
+    el.style.display = bits.length ? 'block' : 'none';
+  };
 
   // --- touch controls + first-run interactive tutorial ---
   try {
@@ -367,6 +434,7 @@
     GAME.applyNoir();
     if (GAME.minimap) GAME.minimap.cv.style.display = GAME.minimap.cp.style.display = 'block';
     if (GAME.touch) GAME.touch.setPlaying(true);
+    if (GAME.suitPreview) GAME.suitPreview.stop();   // free the GPU while playing
     if (GAME.tutorial) GAME.tutorial.start();
     audio.start();   // user gesture — safe to open the AudioContext here
     try { renderer.domElement.requestPointerLock(); } catch (err) {}
@@ -379,7 +447,8 @@
 
 
   let hintTimer = null;
-  GAME.notify = (msg, ms) => hint(msg, ms);
+  // any notification (district mastered, badge, secret) also un-hides the HUD
+  GAME.notify = (msg, ms) => { if (GAME.holdHud) GAME.holdHud(); return hint(msg, ms); };
   function hint(msg, ms) {
     const el = $('hint');
     el.textContent = msg;
@@ -513,6 +582,7 @@
   // ---------- main loop ----------
   setZone(GAME.settings.zone);
   rig.setMode(GAME.settings.time);
+  if (GAME.refreshDailyCard) GAME.refreshDailyCard();
   const clock = new THREE.Clock();
   let frame = 0;
 
@@ -617,6 +687,23 @@
   try { Object.assign(stats, JSON.parse(localStorage.getItem('spidey.stats.v1')) || {}); } catch (err) {}
   GAME.stats = stats;
   let statT = 0, curAir = 0;
+  // dynamic-HUD state: hudQuiet 0..1 fades the chrome out at speed; zoneHoldT
+  // forces it back on for a few seconds when a new district is entered
+  let hudQuiet = 0, zoneHoldT = 0;
+  GAME.holdHud = (s) => { zoneHoldT = Math.max(zoneHoldT, s === undefined ? 3.5 : s); };
+  // DYNAMIC HUD — at speed the screen belongs to the city, not the chrome.
+  // Zone name, speed and the minimap fade out while you're really moving, and
+  // come back when you slow down or something announces itself.
+  function updateHud(mph, rawDt) {
+    hudQuiet += ((mph > 55 && zoneHoldT <= 0 ? 1 : 0) - hudQuiet) * Math.min(1, rawDt * 3.2);
+    zoneHoldT = Math.max(0, zoneHoldT - rawDt);
+    const vis = 1 - hudQuiet;
+    $('zonename').style.opacity = (0.7 * vis).toFixed(3);
+    $('speed').style.opacity = (0.75 * (0.35 + 0.65 * vis)).toFixed(3);
+    if (GAME.minimap && GAME.minimap.cv && !GAME.minimap.full)
+      GAME.minimap.cv.style.opacity = (0.28 + 0.54 * vis).toFixed(3);
+  }
+  GAME._updateHud = updateHud;
 
   function loop() {
     requestAnimationFrame(loop);
@@ -679,6 +766,9 @@
       // traversal stats for badges
       {
         const sp = player.vel.length();
+        // suit mastery accrues only while actually traversing (swing/air)
+        if (GAME.mastery && (player.mode === 'swing' || player.mode === 'air'))
+          GAME.mastery.add(GAME.settings.skin, sp * dt);
         if (sp > stats.maxSpeed) stats.maxSpeed = sp;
         if (player.pos.y > stats.maxAlt) stats.maxAlt = player.pos.y;
         if (player.mode === 'swing') stats.swingDist += sp * dt;
@@ -717,6 +807,8 @@
     if (GAME.comicFX) GAME.comicFX.update(rawDt);
     if (GAME.specials) GAME.specials.update(rawDt, playing ? player : null);
     if (GAME.touch) GAME.touch.update(rawDt);
+    if (playing && GAME.secrets && player) GAME.secrets.update(dt, player.pos);
+    if (playing && GAME.daily && player) GAME.daily.update(dt, player.pos);
     if (playing && GAME.tutorial) GAME.tutorial.update();
     if (playing && GAME.crowds && player) GAME.crowds.update(dt, player.pos);
     if (playing && GAME.events && player) GAME.events.update(dt, player.pos);
@@ -772,6 +864,7 @@
     if (playing) {
       const mph = Math.round(player.vel.length() * 2.237);
       $('speed').textContent = mph > 3 ? mph + ' MPH' : '';
+      updateHud(mph, rawDt);
     }
 
     renderer.render(scene, camera);

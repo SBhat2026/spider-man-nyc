@@ -14,7 +14,8 @@
       this.enabled = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
       this.side = (GAME.settings && GAME.settings.joystickSide) || 'left';
       this.active = false;
-      this.stickId = null; this.lookId = null;
+      this.stickId = null; this.lookId = null; this.pinchId = null;
+      this._pinchD = 0;
       this.base = document.getElementById('tj-base');
       this.knob = document.getElementById('tj-knob');
       this._holdTimer = 0; this._held = false; this._moved = false;
@@ -40,9 +41,11 @@
 
     _reset() {
       const k = GAME.keys; if (k) { k.w = k.a = k.s = k.d = k.space = 0; }
-      this.stickId = this.lookId = null; this._held = false; this._moved = false;
+      this.stickId = this.lookId = this.pinchId = null;
+      this._held = false; this._moved = false;
       clearTimeout(this._holdTimer);
-      if (this.knob) this.knob.style.transform = '';
+      if (this.knob) { this.knob.style.transform = ''; }
+      if (this.base) this.base.classList.remove('hot');
     }
 
     _stickSide(x) {
@@ -76,6 +79,7 @@
             this.base.style.right = this.side === 'right' ? (window.innerWidth - t.clientX - 66) + 'px' : '';
             this.base.style.bottom = (window.innerHeight - t.clientY - 66) + 'px';
           }
+          if (this.base) this.base.classList.add('hot');
           // arm the swing-hold: if the finger stays down, start swinging
           clearTimeout(this._holdTimer);
           this._holdTimer = setTimeout(() => {
@@ -85,6 +89,13 @@
         } else if (this.lookId === null) {
           this.lookId = t.identifier;
           this._lx = t.clientX; this._ly = t.clientY; this._lookMoved = false;
+          e.preventDefault();
+        } else if (this.pinchId === null) {
+          // second look-side finger → PINCH: spreads/squeezes the FOV for a
+          // speed-stretch effect without needing a slider
+          this.pinchId = t.identifier;
+          this._px = t.clientX; this._py = t.clientY;
+          this._pinchD = Math.hypot(t.clientX - this._lx, t.clientY - this._ly);
           e.preventDefault();
         }
       }
@@ -123,10 +134,24 @@
           const dx = t.clientX - this._lx, dy = t.clientY - this._ly;
           if (Math.hypot(dx, dy) > 3) this._lookMoved = true;
           this._lx = t.clientX; this._ly = t.clientY;
-          if (GAME.lookDelta) GAME.lookDelta(dx * LOOK_SENS, dy * LOOK_SENS);
+          // while pinching, both fingers drive zoom — don't also swing the view
+          if (this.pinchId === null && GAME.lookDelta) GAME.lookDelta(dx * LOOK_SENS, dy * LOOK_SENS);
+          else this._pinch();
+          e.preventDefault();
+        } else if (t.identifier === this.pinchId) {
+          this._px = t.clientX; this._py = t.clientY;
+          this._pinch();
           e.preventDefault();
         }
       }
+    }
+
+    // spread = zoom out (wider FOV, more speed-stretch), squeeze = zoom in
+    _pinch() {
+      if (this.pinchId === null) return;
+      const d = Math.hypot(this._px - this._lx, this._py - this._ly);
+      if (this._pinchD > 0 && GAME.zoomDelta) GAME.zoomDelta(d / this._pinchD);
+      this._pinchD = d;
     }
 
     _end(e) {
@@ -142,11 +167,15 @@
           if (k) { k.w = k.a = k.s = k.d = 0; }
           this.stickId = null; this._held = false; this._moved = false;
           if (this.knob) this.knob.style.transform = '';
+          if (this.base) this.base.classList.remove('hot');
         } else if (t.identifier === this.lookId) {
-          if (!this._lookMoved) {                // tap on the look side → jump
+          // a tap only jumps if it wasn't part of a pinch
+          if (!this._lookMoved && this.pinchId === null) {
             if (GAME.keys) { GAME.keys.space = 1; setTimeout(() => { if (GAME.keys) GAME.keys.space = 0; }, 70); }
           }
-          this.lookId = null;
+          this.lookId = null; this.pinchId = null;
+        } else if (t.identifier === this.pinchId) {
+          this.pinchId = null;
         }
       }
     }
