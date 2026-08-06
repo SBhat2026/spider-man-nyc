@@ -5,7 +5,9 @@
 // block fills back in. Non-interactable ambience, NYC-paced.
 (function () {
 
-  const MAX = 160;          // instance pool
+  // instance pool — phones run a smaller crowd (see GFX.crowdMax). Read at
+  // construction rather than parse time so the device profile always wins.
+  const maxCrowd = () => (GAME.GFX && GAME.GFX.crowdMax) || 160;
   const R_SPAWN = 170;      // walkers live within this radius of the player
   const R_KILL = 210;       // recycled past this
 
@@ -57,6 +59,7 @@
       geo.setAttribute('normal', new THREE.Float32BufferAttribute(ns, 3));
       geo.setAttribute('color', new THREE.Float32BufferAttribute(cs, 3));
       geo.setIndex(ix);
+      const MAX = this.max = maxCrowd();
       this.im = new THREE.InstancedMesh(geo,
         new THREE.MeshLambertMaterial({ vertexColors: true }), MAX);
       this.im.frustumCulled = false;
@@ -120,7 +123,7 @@
 
       // altitude-scaled density: packed at street level, empty up high
       const altK = Math.max(0, 1 - Math.max(0, ppos.y - 8) / 130);
-      const want = Math.round(MAX * altK * (this._near.length ? 1 : 0));
+      const want = Math.round(this.max * altK * (this._near.length ? 1 : 0));
 
       let alive = 0;
       for (const w of this.walkers) if (w.alive) alive++;
@@ -132,7 +135,7 @@
         else if (alive > want && w.alive) { w.alive = false; alive--; budget--; }
       }
 
-      for (let i = 0; i < MAX; i++) {
+      for (let i = 0; i < this.max; i++) {
         const w = this.walkers[i];
         if (!w.alive) { this.im.setMatrixAt(i, this._zero); continue; }
         w.t += w.speed * w.dir * dt;

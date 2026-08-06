@@ -172,6 +172,15 @@
         this.fog.color.lerp(hor, 0.5 * alt);
         this.hemi.intensity += 0.18 * alt;
       }
+      // Mobile draws far fewer buildings, so the fog must close before the
+      // cull edge hits. CAP the far plane (never scale it — a scale compounds
+      // with the altitude thinning above and turns high views into pea soup),
+      // and only ever pull it IN, never push it out.
+      const cap = GAME.GFX && GAME.GFX.cityDrawDist;
+      if (cap && cap < 6000) {
+        this.fog.far = Math.min(this.fog.far, cap * 1.15);
+        this.fog.near = Math.min(this.fog.near, this.fog.far * 0.35);
+      }
 
       // sky dome vertex gradient
       const zen = colK(new THREE.Color(), 'skyZenith');

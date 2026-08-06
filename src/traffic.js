@@ -63,7 +63,10 @@
     constructor(city) {
       this.city = city;
       this.group = new THREE.Group();
-      const T = GAME.TRAFFIC;
+      // low-power devices run a thinner traffic pool (instanced, but each car
+      // still costs a matrix update + a lane-follow step every frame)
+      const T = Object.assign({}, GAME.TRAFFIC);
+      T.count = Math.max(40, Math.round(T.count * (GAME.GFX.trafficScale || 1)));
 
       // roads inside Central Park carry no traffic — the park belongs to
       // joggers, not cabs

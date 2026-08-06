@@ -245,6 +245,34 @@
       this._buildGroundAndRoads();
       this._buildAnchors();
       this._collectPerches();
+      this._collectChunks();
+    }
+
+    // Cache a world-space bounding sphere per chunk mesh so the main loop can
+    // distance-cull the CITY ITSELF, not just the tiled ghost copies. On a
+    // phone the frustum alone still submits every chunk in front of you out to
+    // the fog wall; hard-culling past cityDrawDist is the single biggest win.
+    _collectChunks() {
+      this.chunkMeshes = [];
+      this.group.updateMatrixWorld(true);
+      this.group.traverse(o => {
+        if (!o.isMesh || !o.geometry) return;
+        if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+        const bs = o.geometry.boundingSphere;
+        if (!bs || !isFinite(bs.radius)) return;
+        const c = bs.center.clone().applyMatrix4(o.matrixWorld);
+        this.chunkMeshes.push({ m: o, x: c.x, z: c.z, r: bs.radius });
+      });
+    }
+
+    // hide city chunks whose nearest point is beyond maxD. Ground/road planes
+    // are huge single meshes — their radius covers the map, so they survive.
+    cullChunks(cx, cz, maxD) {
+      if (!this.chunkMeshes) return;
+      for (const g of this.chunkMeshes) {
+        const d = Math.hypot(g.x - cx, g.z - cz) - g.r;
+        g.m.visible = d < maxD;
+      }
     }
 
     _key(cx, cz) { return cx + ',' + cz; }

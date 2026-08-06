@@ -21,7 +21,7 @@ window.GAME = {
     //      { file: 'audio/bigband-swing.mp3',  mood: 'day' },
   ],
 
-  GFX: {                // tuned for Apple Silicon (M-series)
+  GFX: {                // tuned for Apple Silicon (M-series) — desktop defaults
     shadowMap: 2048,    // 4096 PCFSoft re-rendered every frame was ~4x the cost
     shadowRadius: 2,    // for a difference invisible at this camera distance
     envMapSize: 128,
@@ -30,6 +30,38 @@ window.GAME = {
     pixelRatio: 1.5,    // retina 2.0 + MSAA = 4x fragments; 1.5 is ~indistinguishable
     pigeonFlocks: 20,
     pigeonsPerFlock: 7,
+    shadows: true,
+    // Cap on building draw distance in metres. The effective distance is
+    // min(this, fog.far * 0.95) so the cull edge always hides inside the fog
+    // — the two can never drift apart and pop buildings out of clear air.
+    cityDrawDist: 6000,
+    cullEvery: 8,           // frames between distance-cull passes
+    crowdMax: 160,
+    trafficScale: 1,
+    antialias: true,
+  },
+
+  // ---- Mobile / low-power profile -------------------------------------
+  // A phone GPU is roughly an order of magnitude behind an M-series chip and
+  // is fill-rate bound at high DPR. The wins, in order of impact: fewer
+  // fragments (pixelRatio), no shadow pass, and drawing far fewer buildings.
+  GFX_MOBILE: {
+    shadowMap: 512,
+    shadowRadius: 1,
+    shadows: false,       // the shadow pass re-renders the city every frame
+    envMapSize: 64,
+    envMapEvery: 14,
+    envMapEveryMatte: 40,
+    pixelRatio: 1,        // 3x DPR on a modern phone = 9x the fragments
+    pigeonFlocks: 6,
+    pigeonsPerFlock: 5,
+    // 1800 m keeps the skyline vista while cutting ~6x the triangles; the
+    // cost curve past this is steep for very little visible gain.
+    cityDrawDist: 1800,
+    cullEvery: 6,
+    crowdMax: 45,
+    trafficScale: 0.35,
+    antialias: false,
   },
 
   PHYS: {
@@ -127,6 +159,46 @@ window.GAME = {
 // ---- Central Park feature layout in park-local (u,v) space ----
 // u: 0 at Central Park West → 1 at 5th Ave;  v: 0 at 59th St → 1 at 110th St.
 // The park quad is near-parallelogram, so an affine map is exact enough.
+// ---- Device profile ---------------------------------------------------
+// Decide once, at boot, whether this is a phone-class device and fold the
+// mobile overrides into GFX. Touch alone isn't enough (touchscreen laptops),
+// so require a small screen OR a coarse pointer with few CPU cores.
+GAME.detectMobile = function () {
+  const touch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+  const small = Math.min(window.innerWidth, window.innerHeight) < 820;
+  const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+  const fewCores = (navigator.hardwareConcurrency || 8) <= 6;
+  return (touch && small) || (coarse && (small || fewCores));
+};
+GAME.applyGfxProfile = function () {
+  GAME.isMobile = GAME.detectMobile();
+  if (GAME.isMobile) Object.assign(GAME.GFX, GAME.GFX_MOBILE);
+  return GAME.isMobile;
+};
+// Fold the profile in HERE, at config load — later modules read GFX at parse
+// time (crowd pool sizes, pigeon counts), so deciding this in main.js would be
+// too late for them.
+GAME.applyGfxProfile();
+
+// ---- Aspect-adaptive field of view ------------------------------------
+// three.js FOV is VERTICAL, so a tall phone in portrait (aspect ~0.46) turns a
+// 68° vertical view into a ~35° horizontal one — tunnel vision. Widen the
+// vertical FOV as the viewport narrows (a bounded "Hor+"), and on very wide
+// screens narrow it back so ultrawide gains width instead of stretching.
+GAME.REF_ASPECT = 16 / 9;
+GAME.fovForAspect = function (baseVFov, aspect) {
+  if (!(aspect > 0)) return baseVFov;
+  const hHalf = Math.atan(Math.tan(baseVFov * Math.PI / 360) * GAME.REF_ASPECT);
+  let v = 2 * Math.atan(Math.tan(hHalf) / aspect) * 180 / Math.PI;
+  // clamp: below ~50 the world feels flat, above ~94 it fish-eyes
+  return Math.max(50, Math.min(94, v));
+};
+// the camera's current base FOV for this viewport
+GAME.baseFov = function () {
+  return GAME.fovForAspect(GAME.CAM.fov,
+    window.innerWidth / Math.max(1, window.innerHeight));
+};
+
 GAME.PARK = {
   lakes: [
     { cx: 0.50, cy: 0.63, rx: 0.30, ry: 0.095 },   // JKO Reservoir

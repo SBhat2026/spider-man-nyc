@@ -2,20 +2,28 @@
 (function () {
   const $ = (id) => document.getElementById(id);
 
+  // Fold in the mobile overrides BEFORE anything reads GFX.
+  const isMobile = GAME.applyGfxProfile ? GAME.applyGfxProfile() : false;
+
   // ---------- renderer / scene ----------
-  const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  const renderer = new THREE.WebGLRenderer({
+    antialias: GAME.GFX.antialias !== false,
+    powerPreference: isMobile ? 'default' : 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, GAME.GFX.pixelRatio || 1.5));
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.enabled = GAME.GFX.shadows !== false;
+  renderer.shadowMap.type = isMobile ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
   renderer.outputEncoding = THREE.sRGBEncoding;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.16;
   $('game').appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
+  // FOV adapts to the viewport shape so portrait phones don't get tunnel
+  // vision and ultrawide monitors gain width instead of stretching.
   const camera = new THREE.PerspectiveCamera(
-    GAME.CAM.fov, window.innerWidth / window.innerHeight, 0.5, 14000);
+    GAME.baseFov ? GAME.baseFov() : GAME.CAM.fov,
+    window.innerWidth / window.innerHeight, 0.5, 14000);
 
   // shadow quality from config
   const rig = new GAME.LightingRig(scene);
@@ -195,7 +203,12 @@
   window.addEventListener('mousedown', () => {
     if (!playing) return;
     if (!isLocked()) {
-      try { renderer.domElement.requestPointerLock(); } catch (err) {}
+      try {
+      // newer browsers return a promise that REJECTS when the lock is refused
+      // (embedded frames, user gesture rules) — swallow both failure modes
+      const pl = renderer.domElement.requestPointerLock();
+      if (pl && pl.catch) pl.catch(() => {});
+    } catch (err) {}
       mouseDrag = true;
     }
   });
@@ -251,7 +264,7 @@
     photo.pos.y += (keys.space - keys.c) * sp;
     camera.position.copy(photo.pos);
     camera.lookAt(photo.pos.clone().add(dir));
-    camera.fov += (GAME.CAM.fov - camera.fov) * Math.min(1, dt * 5);
+    camera.fov += ((GAME.baseFov ? GAME.baseFov() : GAME.CAM.fov) - camera.fov) * Math.min(1, dt * 5);
     camera.updateProjectionMatrix();
   }
   let hadLock = false;
@@ -437,7 +450,12 @@
     if (GAME.suitPreview) GAME.suitPreview.stop();   // free the GPU while playing
     if (GAME.tutorial) GAME.tutorial.start();
     audio.start();   // user gesture — safe to open the AudioContext here
-    try { renderer.domElement.requestPointerLock(); } catch (err) {}
+    try {
+      // newer browsers return a promise that REJECTS when the lock is refused
+      // (embedded frames, user gesture rules) — swallow both failure modes
+      const pl = renderer.domElement.requestPointerLock();
+      if (pl && pl.catch) pl.catch(() => {});
+    } catch (err) {}
     hint('Hold SPACE to swing — release at the top of the arc');
     setTimeout(() => {
       if (playing && document.pointerLockElement !== renderer.domElement)
@@ -566,18 +584,24 @@
       camera.position.x += (Math.random() - 0.5) * 0.22 * fx.shake;
       camera.position.y += (Math.random() - 0.5) * 0.18 * fx.shake;
     }
-    const wantFov = C.fov + C.swingFovBoost * speedK + 8 * fx.pulse;
+    const wantFov = (GAME.baseFov ? GAME.baseFov() : C.fov) +
+                    C.swingFovBoost * speedK + 8 * fx.pulse;
     camera.fov += (wantFov - camera.fov) * Math.min(1, dt * 6);
     camera.updateProjectionMatrix();
   }
 
 
   // ---------- resize ----------
-  window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
+  function onResize() {
+    camera.aspect = window.innerWidth / Math.max(1, window.innerHeight);
+    // re-derive the base FOV: rotating a phone flips the aspect completely
+    if (GAME.baseFov) camera.fov = GAME.baseFov();
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
-  });
+  }
+  window.addEventListener('resize', onResize);
+  // iOS fires orientationchange before the new dimensions settle
+  window.addEventListener('orientationchange', () => setTimeout(onResize, 120));
 
   // ---------- main loop ----------
   setZone(GAME.settings.zone);
@@ -834,11 +858,19 @@
     // Draw distance rides the fog: nothing beyond full fog is visible, so
     // let the frustum CULL it — otherwise the ghost-tile cities render in
     // full (700+ calls, 12M tris) just to be fogged out.
-    if (frame % 8 === 3 && city)
+    const cullEvery = GAME.GFX.cullEvery || 8;
+    if (frame % cullEvery === 3 && city) {
+      // Draw distance is always tucked inside the fog, so the cull edge is
+      // never visible. Phones cap it much shorter (GFX.cityDrawDist), which is
+      // where the ~6x triangle saving comes from.
+      const drawDist = Math.min(GAME.GFX.cityDrawDist || 6000, rig.fog.far * 0.95);
       // ghosts only need to exist near seams: past ~2.4km they're half-fogged
       // silhouettes the eye can't miss, but 700+ draw calls the GPU can
       city.cullGhosts(camera.position.x, camera.position.z,
-                      Math.min(rig.fog.far * 0.95, 2400));
+                      Math.min(drawDist * 1.05, 2400));
+      if (city.cullChunks)
+        city.cullChunks(camera.position.x, camera.position.z, drawDist);
+    }
     const wantFar = rig.fog.far * 1.08;
     if (Math.abs(camera.far - wantFar) > 60) {
       camera.far = wantFar;
