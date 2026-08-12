@@ -27,49 +27,97 @@
         }
       }
 
-      // low-poly walker: torso + head + legs, vertex-grayscale × instance tint
-      const parts = [];
-      const box = (w, h, d, x, y, z, v) => {
-        const g = new THREE.BoxGeometry(w, h, d); g.translate(x, y, z);
+      // ---- walker build ------------------------------------------------
+      // Two instanced meshes share one transform per walker: the BODY takes
+      // the clothing tint, the HEAD takes a skin tone. They have to be
+      // separate because instanceColor multiplies the whole mesh — with one
+      // mesh every pedestrian's face matched their coat.
+      const merge = (parts) => {
+        const ps = [], ns = [], cs = [], ix = [];
+        for (const g of parts) {
+          const b0 = ps.length / 3, gp = g.attributes.position,
+                gn = g.attributes.normal, gc = g.attributes.color;
+          for (let i = 0; i < gp.count; i++) {
+            ps.push(gp.getX(i), gp.getY(i), gp.getZ(i));
+            ns.push(gn.getX(i), gn.getY(i), gn.getZ(i));
+            cs.push(gc.getX(i), gc.getY(i), gc.getZ(i));
+          }
+          // polyhedra (Icosahedron) come back NON-indexed — synthesise a
+          // sequential index for those so they merge like the rest
+          if (g.index) {
+            for (let i = 0; i < g.index.count; i++) ix.push(b0 + g.index.getX(i));
+          } else {
+            for (let i = 0; i < gp.count; i++) ix.push(b0 + i);
+          }
+          g.dispose();
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(ps, 3));
+        geo.setAttribute('normal', new THREE.Float32BufferAttribute(ns, 3));
+        geo.setAttribute('color', new THREE.Float32BufferAttribute(cs, 3));
+        geo.setIndex(ix);
+        return geo;
+      };
+      const shade = (g, v) => {
         const cnt = g.attributes.position.count, col = new Float32Array(cnt * 3);
-        for (let k = 0; k < cnt; k++) { col[k*3] = v; col[k*3+1] = v; col[k*3+2] = v; }
+        for (let k = 0; k < cnt; k++) { col[k*3] = col[k*3+1] = col[k*3+2] = v; }
         g.setAttribute('color', new THREE.BufferAttribute(col, 3));
         return g;
       };
-      parts.push(box(0.36, 0.52, 0.22, 0, 1.02, 0, 1.0));    // torso (tinted)
-      parts.push(box(0.17, 0.19, 0.17, 0, 1.44, 0, 0.82));   // head
-      parts.push(box(0.11, 0.5, 0.12, 0.09, 0.4, 0, 0.3));   // legs (dark)
-      parts.push(box(0.11, 0.5, 0.12, -0.09, 0.4, 0, 0.3));
-      parts.push(box(0.08, 0.4, 0.09, 0.24, 0.98, 0, 0.9));  // arms
-      parts.push(box(0.08, 0.4, 0.09, -0.24, 0.98, 0, 0.9));
-      const ps = [], ns = [], cs = [], ix = [];
-      for (const g of parts) {
-        const b0 = ps.length / 3, gp = g.attributes.position,
-              gn = g.attributes.normal, gc = g.attributes.color;
-        for (let i = 0; i < gp.count; i++) {
-          ps.push(gp.getX(i), gp.getY(i), gp.getZ(i));
-          ns.push(gn.getX(i), gn.getY(i), gn.getZ(i));
-          cs.push(gc.getX(i), gc.getY(i), gc.getZ(i));
-        }
-        for (let i = 0; i < g.index.count; i++) ix.push(b0 + g.index.getX(i));
-        g.dispose();
-      }
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.Float32BufferAttribute(ps, 3));
-      geo.setAttribute('normal', new THREE.Float32BufferAttribute(ns, 3));
-      geo.setAttribute('color', new THREE.Float32BufferAttribute(cs, 3));
-      geo.setIndex(ix);
+      const box = (w, h, d, x, y, z, v, rz) => {
+        const g = new THREE.BoxGeometry(w, h, d);
+        if (rz) g.rotateZ(rz);
+        g.translate(x, y, z);
+        return shade(g, v);
+      };
+      // tapered torso reads as a coat far better than a slab
+      const torso = new THREE.CylinderGeometry(0.20, 0.155, 0.54, 7, 1);
+      torso.scale(1, 1, 0.72); torso.translate(0, 1.03, 0);
+      // shoulders: a slight yoke so the silhouette isn't a plain tube
+      const yoke = new THREE.CylinderGeometry(0.215, 0.20, 0.10, 7, 1);
+      yoke.scale(1, 1, 0.72); yoke.translate(0, 1.255, 0);
+
+      const body = [
+        shade(torso, 1.0), shade(yoke, 0.92),
+        box(0.19, 0.16, 0.17, 0, 0.72, 0, 0.55),          // hips
+        box(0.105, 0.30, 0.115, 0.062, 0.55, 0, 0.34),    // thighs (dark trousers)
+        box(0.105, 0.30, 0.115, -0.062, 0.55, 0, 0.34),
+        box(0.095, 0.30, 0.105, 0.062, 0.24, 0, 0.30),    // shins
+        box(0.095, 0.30, 0.105, -0.062, 0.24, 0, 0.30),
+        box(0.115, 0.06, 0.17, 0.062, 0.06, 0.02, 0.16),  // shoes
+        box(0.115, 0.06, 0.17, -0.062, 0.06, 0.02, 0.16),
+        box(0.075, 0.26, 0.085, 0.235, 1.10, 0, 0.94, 0.07),   // upper arms
+        box(0.075, 0.26, 0.085, -0.235, 1.10, 0, 0.94, -0.07),
+        box(0.068, 0.24, 0.078, 0.255, 0.85, 0, 0.90),    // forearms
+        box(0.068, 0.24, 0.078, -0.255, 0.85, 0, 0.90),
+      ];
       const MAX = this.max = maxCrowd();
-      this.im = new THREE.InstancedMesh(geo,
+      this.im = new THREE.InstancedMesh(merge(body),
         new THREE.MeshLambertMaterial({ vertexColors: true }), MAX);
       this.im.frustumCulled = false;
+
+      // head: rounded skull + hair cap, tinted by SKIN palette
+      const skull = new THREE.IcosahedronGeometry(0.098, 0);
+      skull.scale(1, 1.16, 1.02); skull.translate(0, 1.40, 0);
+      const hair = new THREE.SphereGeometry(0.101, 7, 4, 0, Math.PI * 2, 0, 1.15);
+      hair.scale(1, 1.12, 1.04); hair.translate(0, 1.415, -0.004);
+      const neck = new THREE.CylinderGeometry(0.042, 0.05, 0.07, 5);
+      neck.translate(0, 1.30, 0);
+      this.imHead = new THREE.InstancedMesh(
+        merge([shade(skull, 1.0), shade(hair, 0.30), shade(neck, 0.86)]),
+        new THREE.MeshLambertMaterial({ vertexColors: true }), MAX);
+      this.imHead.frustumCulled = false;
+
       this.group = new THREE.Group();
-      this.group.add(this.im);
+      this.group.add(this.im, this.imHead);
 
       // NYC wardrobe: lots of black/grey coats, hits of color
       const PAL = [0x22242a, 0x2e3138, 0x3a3d45, 0x585b63, 0x14161c, 0x6e7078,
                    0x7a3a30, 0x2e4a6e, 0x51604a, 0x8a7450, 0xb0433a, 0x39597e,
                    0xc8b89a, 0x74538a, 0x9c9ea6, 0x374238];
+      // skin tones, applied to the head mesh only
+      const SKIN = [0xf0c9a4, 0xe0aa80, 0xc98c5e, 0xa9673f, 0x8a5230, 0x63402a,
+                    0xf6d9bc, 0xd39b70, 0x4a2f1e, 0xb87c50];
       let seed = 4241;
       this._rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
       this.walkers = [];
@@ -78,8 +126,11 @@
                             t: 0, seg: null, off: 0, speed: 0, ph: 0 });
         this.im.setColorAt(i, new THREE.Color(PAL[(this._rnd() * PAL.length) | 0])
           .multiplyScalar(0.75 + this._rnd() * 0.45));
+        this.imHead.setColorAt(i, new THREE.Color(SKIN[(this._rnd() * SKIN.length) | 0])
+          .multiplyScalar(0.88 + this._rnd() * 0.2));
       }
       this.im.instanceColor.needsUpdate = true;
+      this.imHead.instanceColor.needsUpdate = true;
 
       this._near = [];       // candidate segs near the player, refreshed ~1 Hz
       this._nearT = 0;
@@ -137,7 +188,11 @@
 
       for (let i = 0; i < this.max; i++) {
         const w = this.walkers[i];
-        if (!w.alive) { this.im.setMatrixAt(i, this._zero); continue; }
+        if (!w.alive) {
+          this.im.setMatrixAt(i, this._zero);
+          this.imHead.setMatrixAt(i, this._zero);
+          continue;
+        }
         w.t += w.speed * w.dir * dt;
         if (w.t < 0.1 || w.t > 0.9) w.dir *= -1;   // turn at the corner
         const s = w.seg;
@@ -150,11 +205,16 @@
         this._q.setFromAxisAngle(this._UP, Math.atan2(s.ux * w.dir, s.uz * w.dir));
         this._m.compose(this._p, this._q, this._s);
         this.im.setMatrixAt(i, this._m);
+        this.imHead.setMatrixAt(i, this._m);   // head rides the same transform
       }
       this.im.instanceMatrix.needsUpdate = true;
+      this.imHead.instanceMatrix.needsUpdate = true;
     }
 
-    dispose() { this.im.geometry.dispose(); this.im.material.dispose(); }
+    dispose() {
+      this.im.geometry.dispose(); this.im.material.dispose();
+      this.imHead.geometry.dispose(); this.imHead.material.dispose();
+    }
   }
 
   GAME.Crowds = Crowds;

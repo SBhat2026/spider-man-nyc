@@ -203,6 +203,20 @@
       lens: 0xf2f2f2, lensEmi: 0x8a8a8a, rim: 0x050506, bigLens: 1.05,
       noir: true, cloak: true, fedora: true,
     },
+    og: {
+      // THE OG (Raimi / Maguire): warm fire-engine red with heavy raised black
+      // webbing everywhere, deep navy-black side panels, arms and legs, the
+      // classic compact black spider, and big silver-grey lenses in black rims.
+      label: 'OG', order: 9, reward: true,
+      primary: { color: 0xc8161d, map: ['#c8161d', '#0b0b10'], rough: 0.55 },
+      secondary: { color: 0x161d38, map: ['#161d38', '#080a14'], rough: 0.66 },
+      accent: { color: 0xc8161d, map: ['#c8161d', '#0b0b10'], rough: 0.55 },
+      torso: { base: '#c8161d', web: '#0b0b10', emblem: '#08080a', emblemScale: 0.9,
+               side: '#161d38' },
+      lens: 0xd6dbe0, lensEmi: 0x666c74, rim: 0x08080a, bigLens: 1.06,
+      // organic shooters: a touch more line-up assist and a cleaner release
+      mods: { assist: 1.12, release: 1.1 },
+    },
   };
   GAME.SKIN_ORDER = Object.keys(GAME.SKINS)
     .sort((a, b) => GAME.SKINS[a].order - GAME.SKINS[b].order);

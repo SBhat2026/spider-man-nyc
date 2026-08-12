@@ -10,7 +10,7 @@
                     desk: 'Tap SPACE to jump' },
     { key: 'swing', touch: 'Press &amp; HOLD the stick to shoot a web and swing — let go at the top of the arc',
                     desk: 'Hold SPACE in the air to swing — release at the top of the arc' },
-    { key: 'trick', touch: 'Flick the stick in a direction mid-air to flip',
+    { key: 'trick', touch: 'Mid-air, FLICK your look thumb in any direction to flip',
                     desk: 'Press F + a direction (W/A/S/D) mid-air to flip' },
   ];
 

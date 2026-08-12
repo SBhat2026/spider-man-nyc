@@ -89,6 +89,7 @@
         } else if (this.lookId === null) {
           this.lookId = t.identifier;
           this._lx = t.clientX; this._ly = t.clientY; this._lookMoved = false;
+          this._lookT = performance.now(); this._didFlick = false;
           e.preventDefault();
         } else if (this.pinchId === null) {
           // second look-side finger → PINCH: spreads/squeezes the FOV for a
@@ -105,13 +106,9 @@
       if (!this.active) return;
       for (const t of e.changedTouches) {
         if (t.identifier === this.stickId) {
-          let dx = t.clientX - this._sx, dy = t.clientY - this._sy;
+          const dx = t.clientX - this._sx, dy = t.clientY - this._sy;
           const d = Math.hypot(dx, dy);
           if (d > MOVE_DEAD) this._moved = true;
-          // flick detection (knob speed)
-          const now = performance.now(), ddt = Math.max(1, now - this._last.t);
-          const vx = (t.clientX - this._last.x) / ddt, vy = (t.clientY - this._last.y) / ddt;
-          this._last = { x: t.clientX, y: t.clientY, t: now };
           const clamped = Math.min(MAX_R, d) / (d || 1);
           const nx = dx * clamped / MAX_R, ny = dy * clamped / MAX_R;   // -1..1
           if (this.knob) this.knob.style.transform = 'translate(' + (dx * clamped) + 'px,' + (dy * clamped) + 'px)';
@@ -121,22 +118,29 @@
             k.w = ny < -0.4 ? 1 : 0; k.s = ny > 0.4 ? 1 : 0;
             k.a = nx < -0.4 ? 1 : 0; k.d = nx > 0.4 ? 1 : 0;
           }
-          const p = GAME.player;
-          if (this._flickCd <= 0 && Math.hypot(vx, vy) > FLICK_V && p && p.mode === 'air') {
-            const trick = Math.abs(ny) > Math.abs(nx)
-              ? (ny < 0 ? 3 : 6)          // flick up = swan, down = double
-              : (nx < 0 ? 4 : 5);         // flick left/right = corkscrew
-            if (p.doTrick) p.doTrick(trick);
-            this._flickCd = 0.6;
-          }
           e.preventDefault();
         } else if (t.identifier === this.lookId) {
           const dx = t.clientX - this._lx, dy = t.clientY - this._ly;
           if (Math.hypot(dx, dy) > 3) this._lookMoved = true;
+          // TRICKS live on the LOOK finger, not the stick: the stick thumb is
+          // busy steering the swing, and flicking it fought the movement input.
+          const now = performance.now(), ddt = Math.max(1, now - this._lookT);
+          const vx = dx / ddt, vy = dy / ddt;
+          this._lookT = now;
           this._lx = t.clientX; this._ly = t.clientY;
-          // while pinching, both fingers drive zoom — don't also swing the view
-          if (this.pinchId === null && GAME.lookDelta) GAME.lookDelta(dx * LOOK_SENS, dy * LOOK_SENS);
-          else this._pinch();
+          const p = GAME.player;
+          if (this._flickCd <= 0 && this.pinchId === null &&
+              Math.hypot(vx, vy) > FLICK_V && p && p.mode === 'air') {
+            const trick = Math.abs(vy) > Math.abs(vx)
+              ? (vy < 0 ? 3 : 6)          // flick up = swan dive, down = double tuck
+              : (vx < 0 ? 4 : 5);         // flick left/right = corkscrew
+            if (p.doTrick) p.doTrick(trick);
+            this._flickCd = 0.6;
+            this._didFlick = true;
+          } else if (this.pinchId === null && GAME.lookDelta) {
+            // normal drag-look (suppressed while pinching — both fingers zoom)
+            GAME.lookDelta(dx * LOOK_SENS, dy * LOOK_SENS);
+          } else if (this.pinchId !== null) this._pinch();
           e.preventDefault();
         } else if (t.identifier === this.pinchId) {
           this._px = t.clientX; this._py = t.clientY;
@@ -169,8 +173,8 @@
           if (this.knob) this.knob.style.transform = '';
           if (this.base) this.base.classList.remove('hot');
         } else if (t.identifier === this.lookId) {
-          // a tap only jumps if it wasn't part of a pinch
-          if (!this._lookMoved && this.pinchId === null) {
+          // a tap only jumps if it wasn't a pinch and wasn't a trick flick
+          if (!this._lookMoved && this.pinchId === null && !this._didFlick) {
             if (GAME.keys) { GAME.keys.space = 1; setTimeout(() => { if (GAME.keys) GAME.keys.space = 0; }, 70); }
           }
           this.lookId = null; this.pinchId = null;
@@ -184,4 +188,35 @@
   }
 
   GAME.Touch = Touch;
+
+  // ---- Landscape orientation ------------------------------------------
+  // Two-thumb games belong in landscape. Where the Screen Orientation API is
+  // allowed (Android/Chrome, and only from fullscreen) we lock it outright;
+  // iOS Safari exposes no lock, so we fall back to a "rotate your phone"
+  // overlay that disappears the moment the device is turned.
+  GAME.lockLandscape = function () {
+    const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+    if (!isTouch) return Promise.resolve(false);
+    const el = document.documentElement;
+    const goFs = el.requestFullscreen ? el.requestFullscreen({ navigationUI: 'hide' })
+               : el.webkitRequestFullscreen ? Promise.resolve(el.webkitRequestFullscreen())
+               : Promise.reject();
+    return Promise.resolve(goFs)
+      .then(() => screen.orientation && screen.orientation.lock
+        ? screen.orientation.lock('landscape') : Promise.reject())
+      .then(() => true)
+      .catch(() => false);       // iOS and refusals fall through to the prompt
+  };
+
+  GAME.updateRotateHint = function () {
+    const el = document.getElementById('rotate');
+    if (!el) return;
+    const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+    const portrait = window.innerHeight > window.innerWidth;
+    const show = isTouch && portrait && GAME.isPlaying && GAME.isPlaying();
+    el.style.display = show ? 'flex' : 'none';
+  };
+  window.addEventListener('resize', () => GAME.updateRotateHint());
+  window.addEventListener('orientationchange',
+    () => setTimeout(() => GAME.updateRotateHint(), 150));
 })();

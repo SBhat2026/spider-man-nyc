@@ -145,8 +145,12 @@
       if (GAME.comicFX && GAME.settings.skin === 'noir')
         GAME.comicFX.pop('AHA!', it.sp.position, 'krak', 5);
       const [got, all] = this.count();
-      if (got === all && GAME.notify)
-        setTimeout(() => GAME.notify('ALL CITY SECRETS FOUND — you know this town', 8000), 1200);
+      if (got === all && all > 0) {
+        setTimeout(() => {
+          if (GAME.notify) GAME.notify('ALL CITY SECRETS FOUND — you know this town', 8000);
+          if (GAME.unlocks && GAME.unlocks.awardOgSuit) GAME.unlocks.awardOgSuit();
+        }, 1200);
+      }
     }
 
     dispose() {

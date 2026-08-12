@@ -278,6 +278,7 @@
       $('menu').style.display = 'flex';
       if (GAME.minimap) GAME.minimap.cv.style.display = GAME.minimap.cp.style.display = 'none';
       if (GAME.touch) GAME.touch.setPlaying(false);
+      if (GAME.updateRotateHint) GAME.updateRotateHint();   // menu is portrait-friendly
       if (GAME.suitPreview) { GAME.suitPreview.resize(); GAME.suitPreview.start(); }
       if (GAME.refreshDailyCard) GAME.refreshDailyCard();
       if (GAME._updateSuitCard) GAME._updateSuitCard(GAME.settings.skin);
@@ -364,6 +365,7 @@
     tasm:     { tag: 'Andrew Garfield · Amazing',     special: '<b>Zip-lines & trampolines (G)</b> — string a walkable line between rooftops, or drop a web-net to bounce sky-high.' },
     upgraded: { tag: 'Tom Holland · Far From Home',   special: '<b>Spider-Sense (G)</b> — a focus pulse: brief slow-mo that reveals nearby easter eggs through the walls.' },
     noir:     { tag: 'Spider-Man Noir · Spider-Verse',special: '<b>Noir mode</b> — turns the city black-and-white with film grain, a wind-blown trench coat, and comic sound-effects.' },
+    og:       { tag: 'Tobey Maguire · The Original',  special: '<b>The one that started it</b> — raised black webbing, deep navy panels, silver lenses. Swings with the classic organic-shooter feel: a touch more reach and a cleaner release.' },
   };
   let selectedSkin = GAME.settings.skin || 'classic';
   function updateSuitCard(k) {
@@ -448,6 +450,10 @@
     if (GAME.minimap) GAME.minimap.cv.style.display = GAME.minimap.cp.style.display = 'block';
     if (GAME.touch) GAME.touch.setPlaying(true);
     if (GAME.suitPreview) GAME.suitPreview.stop();   // free the GPU while playing
+    // two-thumb controls want landscape. Must be driven from this user gesture.
+    if (GAME.lockLandscape)
+      GAME.lockLandscape().then(() => { if (GAME.updateRotateHint) GAME.updateRotateHint(); });
+    if (GAME.updateRotateHint) GAME.updateRotateHint();
     if (GAME.tutorial) GAME.tutorial.start();
     audio.start();   // user gesture — safe to open the AudioContext here
     try {

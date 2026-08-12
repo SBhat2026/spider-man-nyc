@@ -18,6 +18,7 @@
     tasm: 'Reward · master a district',
     upgraded: 'Reward · master a district',
     noir: 'Reward · master a district',
+    og: 'The original · collect every City Secret',
   };
   const REWARD_SUITS = ['tasm', 'upgraded', 'noir'];
 
@@ -53,6 +54,13 @@
         }
       }
       return null;
+    }
+
+    // every City Secret found → the original Raimi suit. Gives the landmark
+    // collectibles a real payoff instead of just flavour text.
+    awardOgSuit() {
+      this._unlock('og', 'THE OG — every secret in the city, found');
+      return this.suits.has('og');
     }
 
     graffitiCount() {
