@@ -191,22 +191,26 @@
       hint('Suit: ' + hero.cycleSkin()); GAME.applyNoir();
     } else if (e.code === 'KeyR') player.respawn();
     else if (e.code === 'KeyG') suitSpecial();
-    // ---- combat keys (gated) : J light · K heavy/yank · L lock · TAB cycle ----
+    // ---- combat keys (gated) ----
+    // NB: K is NOT available — KEYMAP binds it to the Stark web-wing glide and
+    // intercepts it above, so a combat handler on K would never fire.
+    //   J light attack (auto-locks) · L heavy / web-yank
+    //   TAB cycle target · H hold-lock toggle · Y dev spawn
     else if (GAME.combat && e.code === 'KeyJ') {
       camera.getWorldDirection(camDir);
       if (GAME.combat.light(player, camDir) && GAME.combat.combo > 1)
         hint('Combo ×' + GAME.combat.combo, 900);
-    } else if (GAME.combat && e.code === 'KeyK') {
+    } else if (GAME.combat && e.code === 'KeyL') {
       camera.getWorldDirection(camDir);
       GAME.combat.heavy(player, camDir);
-    } else if (GAME.combat && e.code === 'KeyL') {
+    } else if (GAME.combat && e.code === 'KeyH') {
       camera.getWorldDirection(camDir);
       hint(GAME.combat.toggleLock(player.pos, camDir) ? 'Locked on' : 'Lock released', 1000);
     } else if (GAME.combat && e.code === 'Tab') {
       e.preventDefault();
       camera.getWorldDirection(camDir);
       GAME.combat.cycle(player.pos, camDir);
-    } else if (GAME.enemies && e.code === 'KeyU') {
+    } else if (GAME.enemies && e.code === 'KeyY') {
       // dev: spawn a test group in front of the player
       const n = GAME.enemies.spawnGroup(player.pos.x, player.pos.z, player._support || 0, 4);
       hint('Spawned ' + n + ' enemies (dev)', 1500);

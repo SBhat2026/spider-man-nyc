@@ -8,13 +8,15 @@
 //   * Enemies deliberately read as pedestrians (they ARE the crowd walker
 //     mesh, retinted), so a street brawl still looks like a street.
 //
-// KEYBINDS (desktop). J/K/L sit under the right hand, leaving WASD+Space free:
-//   J        light attack — chains 3 hits, 3rd is a launcher
-//   K        heavy / finisher (also web-yank when a target is far)
-//   L        lock-on toggle (auto-locks nearest in view when combat starts)
+// KEYBINDS (desktop) — right hand, leaving WASD+Space completely free:
+//   J        light attack — chains 3 hits, 3rd launches. AUTO-LOCKS the
+//            nearest target in view, so no lock key is needed to start
+//   L        heavy: web-yank at range, finisher up close
 //   TAB      cycle target
-//   SPACE    still jumps / swings — you can always leave
+//   H        hold-lock toggle (optional — pins one target while you reposition)
+//   SPACE    still jumps / swings — you can always leave a fight
 //   Q        dodge roll (reuses the existing barrel-roll trick pose)
+// K is deliberately unused: KEYMAP binds it to the Stark glide.
 // Mobile is intentionally NOT wired: the touch scheme is fully allocated.
 (function () {
 
@@ -183,7 +185,7 @@
         player.pos.x += dx / d * (d - REACH * 0.8);
         player.pos.z += dz / d * (d - REACH * 0.8);
       }
-      this.target = t;
+      this.target = t;                 // attacking auto-locks; no lock key needed
       this.chain = (this.chain + 1) % 3;
       this.chainT = 0.55;
       this.cool = 0.22;
