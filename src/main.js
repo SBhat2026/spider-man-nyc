@@ -105,6 +105,13 @@
     // Swing of the Day: date-seeded waypoint route
     if (GAME.daily) GAME.daily.dispose();
     if (GAME.DailyRun) GAME.daily = new GAME.DailyRun(city, scene);
+    // combat (feature-gated — branch `combat`, enable with ?combat=1)
+    if (GAME.enemies) GAME.enemies.dispose();
+    GAME.enemies = null; GAME.combat = null;
+    if (GAME.feature && GAME.feature('combat') && GAME.Enemies) {
+      GAME.enemies = new GAME.Enemies(city, scene, GAME.crowds);
+      GAME.combat = new GAME.Combat(GAME.enemies);
+    }
     if (!player) player = new GAME.Player(city, hero);
     else player.setCity(city);
     GAME.player = player;      // exposed for debug/minimap tooling
@@ -184,6 +191,26 @@
       hint('Suit: ' + hero.cycleSkin()); GAME.applyNoir();
     } else if (e.code === 'KeyR') player.respawn();
     else if (e.code === 'KeyG') suitSpecial();
+    // ---- combat keys (gated) : J light · K heavy/yank · L lock · TAB cycle ----
+    else if (GAME.combat && e.code === 'KeyJ') {
+      camera.getWorldDirection(camDir);
+      if (GAME.combat.light(player, camDir) && GAME.combat.combo > 1)
+        hint('Combo ×' + GAME.combat.combo, 900);
+    } else if (GAME.combat && e.code === 'KeyK') {
+      camera.getWorldDirection(camDir);
+      GAME.combat.heavy(player, camDir);
+    } else if (GAME.combat && e.code === 'KeyL') {
+      camera.getWorldDirection(camDir);
+      hint(GAME.combat.toggleLock(player.pos, camDir) ? 'Locked on' : 'Lock released', 1000);
+    } else if (GAME.combat && e.code === 'Tab') {
+      e.preventDefault();
+      camera.getWorldDirection(camDir);
+      GAME.combat.cycle(player.pos, camDir);
+    } else if (GAME.enemies && e.code === 'KeyU') {
+      // dev: spawn a test group in front of the player
+      const n = GAME.enemies.spawnGroup(player.pos.x, player.pos.z, player._support || 0, 4);
+      hint('Spawned ' + n + ' enemies (dev)', 1500);
+    }
     else if (e.code === 'KeyB' && GAME.daily) {
       if (GAME.daily.active) { GAME.daily.stop(false); hint('Route abandoned'); }
       else if (!GAME.daily.start()) hint('No route available here');
@@ -837,6 +864,8 @@
     if (GAME.comicFX) GAME.comicFX.update(rawDt);
     if (GAME.specials) GAME.specials.update(rawDt, playing ? player : null);
     if (GAME.touch) GAME.touch.update(rawDt);
+    if (playing && GAME.enemies && player) GAME.enemies.update(dt, player.pos);
+    if (playing && GAME.combat) GAME.combat.update(dt);
     if (playing && GAME.secrets && player) GAME.secrets.update(dt, player.pos);
     if (playing && GAME.daily && player) GAME.daily.update(dt, player.pos);
     if (playing && GAME.tutorial) GAME.tutorial.update();
