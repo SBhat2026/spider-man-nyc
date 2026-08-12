@@ -21,6 +21,14 @@ window.GAME = {
     //      { file: 'audio/bigband-swing.mp3',  mood: 'day' },
   ],
 
+  // ---- Feature gates ----------------------------------------------------
+  // In-development systems live behind these so the `combat` branch can stay
+  // merged with main without shipping half-built features to players.
+  // Override per-session with ?combat=1 in the URL (see resolveFeatures below).
+  FEATURES: {
+    combat: false,      // enemies, targeting, melee — developed on branch `combat`
+  },
+
   GFX: {                // tuned for Apple Silicon (M-series) — desktop defaults
     shadowMap: 2048,    // 4096 PCFSoft re-rendered every frame was ~4x the cost
     shadowRadius: 2,    // for a difference invisible at this camera distance
@@ -159,6 +167,30 @@ window.GAME = {
 // ---- Central Park feature layout in park-local (u,v) space ----
 // u: 0 at Central Park West → 1 at 5th Ave;  v: 0 at 59th St → 1 at 110th St.
 // The park quad is near-parallelogram, so an affine map is exact enough.
+// ---- Feature gate resolution ------------------------------------------
+// Precedence: URL query (?combat=1 / ?combat=0) > saved override > default.
+// Lets the branch be tested on the live Pages URL without a separate deploy.
+GAME.resolveFeatures = function () {
+  let q = null;
+  try { q = new URLSearchParams(location.search); } catch (e) {}
+  for (const k of Object.keys(GAME.FEATURES)) {
+    const key = 'spidey.feat.' + k;
+    if (q && q.has(k)) {
+      const on = q.get(k) !== '0' && q.get(k) !== 'false';
+      GAME.FEATURES[k] = on;
+      try { localStorage.setItem(key, on ? '1' : '0'); } catch (e) {}
+    } else {
+      try {
+        const s = localStorage.getItem(key);
+        if (s !== null) GAME.FEATURES[k] = (s === '1');
+      } catch (e) {}
+    }
+  }
+  return GAME.FEATURES;
+};
+GAME.feature = function (k) { return !!(GAME.FEATURES && GAME.FEATURES[k]); };
+GAME.resolveFeatures();
+
 // ---- Device profile ---------------------------------------------------
 // Decide once, at boot, whether this is a phone-class device and fold the
 // mobile overrides into GFX. Touch alone isn't enough (touchscreen laptops),
