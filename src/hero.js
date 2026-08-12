@@ -6,23 +6,30 @@
 
   // ---------- procedural suit textures ----------
   const texCache = {};
-  function webTexture(base, line, density) {
-    const key = base + '|' + line;
+  // `hi` draws a second, thinner pass in a light colour on top of the dark
+  // line — the raised-webbing look of the Raimi suit, where each strand catches
+  // a highlight along its crest.
+  function webTexture(base, line, density, hi) {
+    const key = base + '|' + line + '|' + (hi || '');
     if (texCache[key]) return texCache[key];
     const N = 256;
     const cv = document.createElement('canvas'); cv.width = cv.height = N;
     const c = cv.getContext('2d');
     c.fillStyle = base; c.fillRect(0, 0, N, N);
-    c.strokeStyle = line; c.lineWidth = 1.5;
     const cx = N / 2, cy = -N * 0.15;
-    for (let a = -Math.PI * 0.45; a <= Math.PI * 1.45; a += Math.PI / (density || 13)) {
-      c.beginPath(); c.moveTo(cx, cy);
-      c.lineTo(cx + Math.cos(a) * N * 1.6, cy + Math.sin(a) * N * 1.6);
-      c.stroke();
-    }
-    for (let r = 18; r < N * 1.7; r += 21) {
-      c.beginPath(); c.arc(cx, cy, r, 0, Math.PI * 2); c.stroke();
-    }
+    const strands = (col, w, off) => {
+      c.strokeStyle = col; c.lineWidth = w;
+      for (let a = -Math.PI * 0.45; a <= Math.PI * 1.45; a += Math.PI / (density || 13)) {
+        c.beginPath(); c.moveTo(cx + off, cy + off);
+        c.lineTo(cx + off + Math.cos(a) * N * 1.6, cy + off + Math.sin(a) * N * 1.6);
+        c.stroke();
+      }
+      for (let r = 18; r < N * 1.7; r += 21) {
+        c.beginPath(); c.arc(cx + off, cy + off, r, 0, Math.PI * 2); c.stroke();
+      }
+    };
+    strands(line, hi ? 2.6 : 1.5, 0);
+    if (hi) strands(hi, 0.9, -0.55);      // highlight riding the strand crest
     const t = new THREE.CanvasTexture(cv);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     t.encoding = THREE.sRGBEncoding;
@@ -82,18 +89,22 @@
       gy.addColorStop(1, T.yoke + '00');
       c.fillStyle = gy; c.fillRect(0, N * 0.56, N, N * 0.24);
     }
-    // webbing
+    // webbing — with an optional light highlight pass for raised strands
     if (T.web) {
-      c.strokeStyle = T.web; c.lineWidth = 2;
       const wx = N / 2, wy = -N * 0.55;
-      for (let a = -Math.PI * 0.45; a <= Math.PI * 1.45; a += Math.PI / 15) {
-        c.beginPath(); c.moveTo(wx, wy);
-        c.lineTo(wx + Math.cos(a) * N * 2.2, wy + Math.sin(a) * N * 2.2);
-        c.stroke();
-      }
-      for (let r = 40; r < N * 2.2; r += 34) {
-        c.beginPath(); c.arc(wx, wy, r, 0, Math.PI * 2); c.stroke();
-      }
+      const strands = (col, w, off) => {
+        c.strokeStyle = col; c.lineWidth = w;
+        for (let a = -Math.PI * 0.45; a <= Math.PI * 1.45; a += Math.PI / 15) {
+          c.beginPath(); c.moveTo(wx + off, wy + off);
+          c.lineTo(wx + off + Math.cos(a) * N * 2.2, wy + off + Math.sin(a) * N * 2.2);
+          c.stroke();
+        }
+        for (let r = 40; r < N * 2.2; r += 34) {
+          c.beginPath(); c.arc(wx + off, wy + off, r, 0, Math.PI * 2); c.stroke();
+        }
+      };
+      strands(T.web, T.webHi ? 3.4 : 2, 0);
+      if (T.webHi) strands(T.webHi, 1.2, -0.9);
     }
     // panel seams / trim lines (iron suit style)
     if (T.trim) {
@@ -208,11 +219,13 @@
       // webbing everywhere, deep navy-black side panels, arms and legs, the
       // classic compact black spider, and big silver-grey lenses in black rims.
       label: 'OG', order: 9, reward: true,
-      primary: { color: 0xc8161d, map: ['#c8161d', '#0b0b10'], rough: 0.55 },
-      secondary: { color: 0x161d38, map: ['#161d38', '#080a14'], rough: 0.66 },
-      accent: { color: 0xc8161d, map: ['#c8161d', '#0b0b10'], rough: 0.55 },
-      torso: { base: '#c8161d', web: '#0b0b10', emblem: '#08080a', emblemScale: 0.9,
-               side: '#161d38' },
+      // the webbing is RAISED on this suit: a dark strand with a bright silver
+      // highlight along its crest — that white line is the signature detail
+      primary: { color: 0xc8161d, map: ['#c8161d', '#0b0b10', 13, '#eef2f6'], rough: 0.55 },
+      secondary: { color: 0x161d38, map: ['#161d38', '#05060d', 13, '#c8d2e0'], rough: 0.66 },
+      accent: { color: 0xc8161d, map: ['#c8161d', '#0b0b10', 13, '#eef2f6'], rough: 0.55 },
+      torso: { base: '#c8161d', web: '#0b0b10', webHi: '#eef2f6',
+               emblem: '#08080a', emblemScale: 0.9, side: '#161d38' },
       lens: 0xd6dbe0, lensEmi: 0x666c74, rim: 0x08080a, bigLens: 1.06,
       // organic shooters: a touch more line-up assist and a cleaner release
       mods: { assist: 1.12, release: 1.1 },
@@ -227,7 +240,8 @@
       roughness: def.rough !== undefined ? def.rough : 0.7,
       metalness: def.metal || 0.05,
     });
-    if (def.map) m.map = webTexture(def.map[0], def.map[1]);
+    // map = [base, lineColor, density?, highlightColor?]
+    if (def.map) m.map = webTexture(def.map[0], def.map[1], def.map[2], def.map[3]);
     m.envMapIntensity = def.envI || 0.22;
     if (def.emi) { m.emissive = new THREE.Color(def.emi); m.emissiveIntensity = def.emiI || 0.3; }
     return m;

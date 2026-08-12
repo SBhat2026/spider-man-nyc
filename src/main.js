@@ -71,6 +71,8 @@
   if (GAME.Specials) GAME.specials = new GAME.Specials(scene);
   // per-suit mastery progression (distance swung → cosmetic perks)
   if (GAME.Mastery) GAME.mastery = new GAME.Mastery();
+  // OG suit's spider-sense: directional threat arrows around the crosshair
+  if (GAME.SpideySense) GAME.spideySense = new GAME.SpideySense();
 
   let city = null, traffic = null, pigeons = null, player = null;
   function setZone(key) {
@@ -319,6 +321,9 @@
       fx.classList.toggle('on', noir);
       fx.style.opacity = classic ? '0.3' : '';
     }
+    // spider-sense belongs to the OG suit only
+    if (GAME.spideySense)
+      GAME.spideySense.setActive(GAME.settings.skin === 'og' && playing);
   };
   GAME.refreshSuitLocks = function () {
     skinRow.querySelectorAll('button').forEach(btn => {
@@ -393,6 +398,53 @@
   }
   GAME._updateSuitCard = updateSuitCard;
   GAME.refreshSuitLocks();
+
+  // ---- Test/dev unlock, reachable without a keyboard --------------------
+  // The 1s2i3d4d typed code is desktop-only. On a phone: tap the title 5x, or
+  // load with ?unlockall=1. Both open every suit AND reveal the easter eggs
+  // on the map — the same thing the typed code does.
+  GAME.unlockEverything = function (quiet) {
+    if (GAME.unlocks) GAME.unlocks.unlockAll();
+    if (GAME.minimap) {
+      GAME.minimap.revealed = true;
+      GAME.minimap._flash = 2.6;
+    }
+    if (GAME.refreshSuitLocks) GAME.refreshSuitLocks();
+    if (GAME._updateSuitCard) GAME._updateSuitCard(GAME.settings.skin);
+    if (!quiet && GAME.notify)
+      GAME.notify('TEST MODE — all suits unlocked, eggs revealed', 5000);
+    return true;
+  };
+  {
+    let q = null;
+    try { q = new URLSearchParams(location.search); } catch (e) {}
+    // NB: the minimap doesn't exist yet here (setZone runs later), so record
+    // the intent and re-apply once the world is built.
+    GAME._pendingUnlockAll =
+      !!(q && (q.get('unlockall') === '1' || q.get('unlockall') === 'true'));
+    if (GAME._pendingUnlockAll) GAME.unlockEverything(true);
+    // 5 taps on the title (works on touch and mouse)
+    const title = document.querySelector('#menu h1');
+    if (title) {
+      let taps = 0, last = 0;
+      title.style.cursor = 'pointer';
+      title.addEventListener('click', () => {
+        const now = perf();
+        taps = (now - last < 1.2) ? taps + 1 : 1;
+        last = now;
+        if (taps >= 5) {
+          taps = 0;
+          GAME.unlockEverything();
+          const el = $('unlockHint');
+          if (el) el.textContent = '✓ Test mode — all suits unlocked, eggs revealed on the map';
+        } else if (taps >= 3) {
+          const el = $('unlockHint');
+          if (el) el.textContent = (5 - taps) + ' more taps…';
+        }
+      });
+    }
+  }
+
   // rotating 3D suit model in the card (its own tiny GL context, menu-only)
   if (GAME.SuitPreview && $('suitModel')) {
     try {
@@ -612,6 +664,8 @@
   // ---------- main loop ----------
   setZone(GAME.settings.zone);
   rig.setMode(GAME.settings.time);
+  // the world (and minimap) now exist — apply ?unlockall=1 for real
+  if (GAME._pendingUnlockAll) GAME.unlockEverything(true);
   if (GAME.refreshDailyCard) GAME.refreshDailyCard();
   const clock = new THREE.Clock();
   let frame = 0;
@@ -837,6 +891,8 @@
     if (GAME.comicFX) GAME.comicFX.update(rawDt);
     if (GAME.specials) GAME.specials.update(rawDt, playing ? player : null);
     if (GAME.touch) GAME.touch.update(rawDt);
+    if (playing && GAME.spideySense && player)
+      GAME.spideySense.update(rawDt, player.pos, camYaw + Math.PI);
     if (playing && GAME.secrets && player) GAME.secrets.update(dt, player.pos);
     if (playing && GAME.daily && player) GAME.daily.update(dt, player.pos);
     if (playing && GAME.tutorial) GAME.tutorial.update();
