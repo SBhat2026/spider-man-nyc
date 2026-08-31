@@ -139,6 +139,13 @@
       const spacePressed = k.space && !this._prevSpace;
       const prevY = this.pos.y;
 
+      // IRON SPIDER SPIDER-STANCE — hold K on a surface and the four waldoes
+      // take his weight: he rides up on them and walks noticeably faster. Only
+      // valid where there's something to plant on, so it drops the moment he's
+      // airborne or on a web.
+      this.waldoStance = !!(k.k && GAME.settings.skin === 'iron' &&
+        (this.mode === 'ground' || this.mode === 'crawl' || this.mode === 'wallrun'));
+
       // Where you look drives the animation: pitch tucks him into a dive or
       // opens him up, and look-vs-travel yaw leans the torso and turns the head.
       this.lookPitch = Math.asin(Math.max(-1, Math.min(1, camFwd.y)));
@@ -219,7 +226,7 @@
         }
         this.pos.addScaledVector(this.vel, dt);
         if (k.space && this._airTime > 0.14) this._attach(camera, camFwd);
-      } else if (this.mode === 'wallrun' && this.wall) {
+      } else if (this.mode === 'wallrun' && this.wall && this._wrDir) {
         // --- WALL-RUN: sprinting horizontally along the facade. Momentum
         // carries him, bleeding off until he either bounces (SPACE), slows to
         // a crawl-stick, or runs out of wall. ---
@@ -284,7 +291,8 @@
         // wall tangent chosen so D moves screen-right (camera sits off the
         // outward normal looking at the wall)
         const tx = n.nz, tz = -n.nx;
-        const cs = P.crawlSpeed * (k.shift ? P.sprintMult : 1);
+        const cs = P.crawlSpeed * (k.shift ? P.sprintMult : 1) *
+                   (this.waldoStance ? P.waldoStanceMult : 1);
         this.vel.set(tx * ix * cs, iz * cs, tz * ix * cs);
         this.pos.addScaledVector(this.vel, dt);
         const stick = this.city.stickToWall(this.pos, n.b, P.playerRadius);
@@ -310,7 +318,8 @@
         const tx = (fwd.x * iz + right.x * ix), tz = (fwd.z * iz + right.z * ix);
         const tl = Math.hypot(tx, tz);
         const spd = P.runSpeed;
-        const runSpd = spd * (k.shift ? P.sprintMult : 1);
+        const runSpd = spd * (k.shift ? P.sprintMult : 1) *
+                       (this.waldoStance ? P.waldoStanceMult : 1);
         const targx = tl ? tx / tl * runSpd : 0, targz = tl ? tz / tl * runSpd : 0;
         const ak = Math.min(1, P.runAccel * dt / spd);
         this.vel.x += (targx - this.vel.x) * Math.min(1, ak * 4);
@@ -496,6 +505,7 @@
         wallNormal: this.wall, atLedge,
         wallHangN: this.ledgeHang ? this.wall : null,
         gliding: this.gliding && this.mode === 'air',
+        waldoStance: this.waldoStance,
       });
     }
   }

@@ -48,9 +48,14 @@
     }
 
     finish() {
+      const wasActive = this.active;
       this.active = false;
       if (this.el) this.el.style.display = 'none';
       try { localStorage.setItem('spidey.tutorial.v1', '1'); } catch (e) {}
+      // hand the top of the screen over to the suit intro, which held off
+      // while the controls tutorial was running
+      if (wasActive && GAME.suitHelp && GAME.isPlaying && GAME.isPlaying())
+        setTimeout(() => GAME.suitHelp.onSuitEquipped(GAME.settings.skin), 600);
     }
     reset() { try { localStorage.removeItem('spidey.tutorial.v1'); } catch (e) {} }
 

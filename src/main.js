@@ -23,7 +23,7 @@
   // vision and ultrawide monitors gain width instead of stretching.
   const camera = new THREE.PerspectiveCamera(
     GAME.baseFov ? GAME.baseFov() : GAME.CAM.fov,
-    window.innerWidth / window.innerHeight, 0.5, 14000);
+    window.innerWidth / window.innerHeight, 0.28, 14000);
 
   // shadow quality from config
   const rig = new GAME.LightingRig(scene);
@@ -156,6 +156,11 @@
     if (!playing) return;
     const k = KEYMAP[e.code];
     if (k) { keys[k] = 1; e.preventDefault(); }
+    // Photo mode freezes the world and flies the camera — WASD/SPACE/C drive
+    // the free camera and P/ENTER/M still apply, but tricks, suit specials,
+    // suit cycling, time-of-day and respawn were all still firing into a world
+    // that isn't ticking. Everything below this line is gameplay-only.
+    else if (photo.on && e.code !== 'KeyP' && e.code !== 'Enter' && e.code !== 'KeyM') return;
     else if (e.code === 'KeyF') {
       // F + held direction picks the trick: W swan double · S double tuck ·
       // A/D corkscrew · plain F classic flip
@@ -184,6 +189,7 @@
     else if (e.code === 'KeyT') hint('Time: ' + rig.toggle());
  else if (e.code === 'KeyN') {
       hint('Suit: ' + hero.cycleSkin()); GAME.applyNoir();
+      if (GAME.suitHelp) GAME.suitHelp.onSuitEquipped(GAME.settings.skin);
     } else if (e.code === 'KeyR') player.respawn();
     else if (e.code === 'KeyG') suitSpecial();
     else if (e.code === 'KeyB' && GAME.daily) {
@@ -280,6 +286,7 @@
       $('menu').style.display = 'flex';
       if (GAME.minimap) GAME.minimap.cv.style.display = GAME.minimap.cp.style.display = 'none';
       if (GAME.touch) GAME.touch.setPlaying(false);
+      if (GAME.suitHelp) GAME.suitHelp.setPlaying(false);
       if (GAME.updateRotateHint) GAME.updateRotateHint();   // menu is portrait-friendly
       if (GAME.suitPreview) { GAME.suitPreview.resize(); GAME.suitPreview.start(); }
       if (GAME.refreshDailyCard) GAME.refreshDailyCard();
@@ -360,25 +367,18 @@
     btn.addEventListener('mouseleave', () => updateSuitCard(selectedSkin));
   });
 
-  // per-suit blurbs shown in the home-page description card
-  const SUIT_DESC = {
-    classic:  { tag: 'Tom Holland · MCU',             special: '<b>Web-wings glide</b> — hold K (or hold, on mobile) to spread the underarm webbing and soar between towers.' },
-    black:    { tag: 'Tobey Maguire · Symbiote',      special: '<b>Symbiote-amplified</b> — higher jumps, wilder swings, and sharper mid-air steering.' },
-    iron:     { tag: 'Iron Spider · MCU',             special: '<b>Waldo dash (G)</b> — four mechanical legs lunge you forward and grip walls, cracking the concrete where they strike.' },
-    miles:    { tag: 'Miles Morales · Spider-Verse',  special: '<b>Venom Blast</b> — a bio-electric shockwave detonates on every hard landing.' },
-    y2099:    { tag: "Miguel O'Hara · 2099",          special: '<b>Bullet-time</b> — the world automatically slows at the apex of every jump.' },
-    tasm:     { tag: 'Andrew Garfield · Amazing',     special: '<b>Zip-lines & trampolines (G)</b> — string a walkable line between rooftops, or drop a web-net to bounce sky-high.' },
-    upgraded: { tag: 'Tom Holland · Far From Home',   special: '<b>Spider-Sense (G)</b> — a focus pulse: brief slow-mo that reveals nearby easter eggs through the walls.' },
-    noir:     { tag: 'Spider-Man Noir · Spider-Verse',special: '<b>Noir mode</b> — turns the city black-and-white with film grain, a wind-blown trench coat, and comic sound-effects.' },
-    og:       { tag: 'Tobey Maguire · The Original',  special: '<b>The one that started it</b> — raised black webbing, deep navy panels, silver lenses. Swings with the classic organic-shooter feel: a touch more reach and a cleaner release.' },
-  };
+  if (GAME.SuitHelp) GAME.suitHelp = new GAME.SuitHelp();
+  // The menu card, the in-game ? tab and the first-use popup all read the same
+  // per-suit ability table (src/suithelp.js) — there used to be a private copy
+  // here that drifted from what the suits actually did.
   let selectedSkin = GAME.settings.skin || 'classic';
   function updateSuitCard(k) {
-    const def = GAME.SKINS[k] || {}, d = SUIT_DESC[k] || {};
+    const def = GAME.SKINS[k] || {};
+    const SH = GAME.suitHelp;
     if (GAME.suitPreview) GAME.suitPreview.setSkin(k);
     if ($('suitName')) $('suitName').textContent = def.label || k;
-    if ($('suitTag')) $('suitTag').textContent = d.tag || '';
-    if ($('suitSpecial')) $('suitSpecial').innerHTML = d.special || '';
+    if ($('suitTag')) $('suitTag').textContent = SH ? SH.tagFor(k) : '';
+    if ($('suitSpecial')) $('suitSpecial').innerHTML = SH ? SH.menuBlurb(k) : '';
     const dot = $('suitDot');
     if (dot && def.primary) dot.style.background = '#' + ((def.primary.color || 0) >>> 0).toString(16).padStart(6, '0');
     const locked = GAME.unlocks && !GAME.unlocks.has(k);
@@ -507,6 +507,15 @@
       GAME.lockLandscape().then(() => { if (GAME.updateRotateHint) GAME.updateRotateHint(); });
     if (GAME.updateRotateHint) GAME.updateRotateHint();
     if (GAME.tutorial) GAME.tutorial.start();
+    if (GAME.suitHelp) {
+      GAME.suitHelp.setPlaying(true);
+      // The first-run controls tutorial owns the top of the screen; stacking the
+      // suit intro on it would bury one of them. If it's running, Tutorial.finish
+      // hands off to the suit tip instead.
+      if (!(GAME.tutorial && GAME.tutorial.active))
+        setTimeout(() => { if (playing) GAME.suitHelp.onSuitEquipped(GAME.settings.skin); }, 900);
+      else GAME.suitHelp.refresh();
+    }
     audio.start();   // user gesture — safe to open the AudioContext here
     try {
       // newer browsers return a promise that REJECTS when the lock is refused
@@ -589,8 +598,14 @@
         camTarget.z + Math.cos(a) * Math.cos(pitch) * camDist);
     }
     if (desired.y < 0.6) desired.y = 0.6;
-    // occlusion: march from head toward camera, stop before entering a building
-    const steps = 12;
+    // Occlusion: march from head toward camera, stop before entering a building.
+    // 12 steps over ~8 m left each step ~0.7 m long, and backing off by a single
+    // step still parked the lens right on the masonry — inside the 0.5 m near
+    // plane — so the wall clipped away and you saw through the building. Finer
+    // steps plus a fixed standoff keep the facade in front of the lens.
+    const steps = 22;
+    const reach = camTarget.distanceTo(desired) || 1;
+    const standoff = 0.7 / reach;              // metres → fraction of the ray
     let safe = desired;
     for (let i = 1; i <= steps; i++) {
       const t = i / steps;
@@ -598,14 +613,19 @@
       const py = camTarget.y + (desired.y - camTarget.y) * t;
       const pz = camTarget.z + (desired.z - camTarget.z) * t;
       if (city.isSolid(px, py, pz)) {
-        const tSafe = Math.max(0.22, (i - 1) / steps);
-        safe = new THREE.Vector3(
-          camTarget.x + (desired.x - camTarget.x) * tSafe,
-          camTarget.y + (desired.y - camTarget.y) * tSafe,
-          camTarget.z + (desired.z - camTarget.z) * tSafe);
+        // No lower bound here. The old `max(0.22, …)` floor meant that when the
+        // very first sample was already solid — the player flat against a
+        // facade — the "safe" spot was *forced* 20% down a ray that runs
+        // straight into the wall, which is how the camera ended up inside the
+        // building in about an eighth of all orientations.
+        const tSafe = Math.max(0, t - standoff);
+        safe = new THREE.Vector3().lerpVectors(camTarget, desired, tSafe);
         break;
       }
     }
+    // pressed into a corner there may be no clear spot on this ray at all;
+    // riding his head beats sitting in the masonry
+    if (city.isSolid(safe.x, safe.y, safe.z)) safe = camTarget.clone();
     if (!started) { camPos.copy(safe); started = true; }
     const k = 1 - Math.exp(-dt * C.lag);
     camPos.lerp(safe, k);
@@ -677,6 +697,12 @@
 
   // --- suit special ability, on the G key (context-sensitive per suit) ---
   const _sfwd = new THREE.Vector3();
+  // Amazing web-nets are a finite resource: two in the air, reloaded the moment
+  // he touches anything solid. Together with the span requirement and the lossy
+  // bounce, that's what stops the net ladder to the stratosphere.
+  const NET_MAX_CHARGES = 2;
+  let netCharges = NET_MAX_CHARGES, netCd = 0;
+  GAME.netState = () => ({ charges: netCharges, max: NET_MAX_CHARGES });
   function suitSpecial() {
     if (!playing || !player) return;
     camera.getWorldDirection(_sfwd);
@@ -693,14 +719,21 @@
       if (GAME.audio && GAME.audio.thwip) GAME.audio.thwip();
     } else if (skin === 'tasm') {
       // On a surface → string a walkable zip-line to the building ahead.
-      // In the air → drop a web-trampoline to bounce off.
+      // In the air → sling a web ACROSS the gap he's falling through.
       const grounded = player.mode === 'ground' || player.mode === 'crawl' || player.mode === 'wallrun';
       if (grounded && GAME.specials) {
         const tgt = city.findAutoAnchor(player.pos, _sfwd);
         const ok = GAME.specials.zipline(player.pos, tgt);
         hint(ok ? 'Zip-line strung' : 'No anchor in sight');
       } else if (GAME.specials) {
-        GAME.specials.trampoline(player.pos);
+        if (netCd > 0) return;
+        if (netCharges <= 0) { hint('No web left — touch down to reload'); return; }
+        const res = GAME.specials.webNet(player.pos, city);
+        if (!res) { hint(GAME.specials.lastNetFail || 'Nothing to string it between'); return; }
+        netCharges--; netCd = 0.55;
+        hint('Web strung — ' + res.span.toFixed(0) + ' m span');
+        if (GAME.camFx) GAME.camFx.pulse = Math.max(GAME.camFx.pulse, 0.4);
+        if (GAME.audio && GAME.audio.thwip) GAME.audio.thwip();
       }
     } else if (skin === 'upgraded') {
       GAME.slowmo(0.8);
@@ -786,6 +819,20 @@
     $('speed').style.opacity = (0.75 * (0.35 + 0.65 * vis)).toFixed(3);
     if (GAME.minimap && GAME.minimap.cv && !GAME.minimap.full)
       GAME.minimap.cv.style.opacity = (0.28 + 0.54 * vis).toFixed(3);
+    // Amazing: show how much web is left, so the charge limit is legible
+    // instead of just silently refusing the key
+    const pips = $('netpips');
+    if (pips) {
+      const on = GAME.settings.skin === 'tasm';
+      pips.style.display = on ? 'block' : 'none';
+      if (on && pips._n !== netCharges) {
+        pips._n = netCharges;
+        let s = '';
+        for (let i = 0; i < NET_MAX_CHARGES; i++)
+          s += '<i class="' + (i < netCharges ? 'on' : '') + '"></i>';
+        pips.innerHTML = s + '<span>WEB</span>';
+      }
+    }
   }
   GAME._updateHud = updateHud;
 
@@ -825,6 +872,10 @@
         if (GAME.camFx) GAME.camFx.pulse = Math.max(GAME.camFx.pulse, 0.5);
       }
       if (player.mode !== 'air') apexUsed = false;
+      // web-net charges reload on any solid contact
+      netCd = Math.max(0, netCd - rawDt);
+      if (player.mode === 'ground' || player.mode === 'crawl' || player.mode === 'wallrun')
+        netCharges = NET_MAX_CHARGES;
       // Blot portals: teleport between the holes in reality
       portalStep(rawDt);
       // comic sound-effect bubbles — Noir suit only

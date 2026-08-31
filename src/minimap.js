@@ -14,6 +14,15 @@
     return 236;
   }
   function mapInset() { return Math.min(window.innerWidth, window.innerHeight) < 480 ? 10 : 14; }
+  // Publish the map's footprint so the HUD can stay out from under it. The map
+  // is z-index 30 and up to 236px across in the bottom-right corner — exactly
+  // where the speed readout is anchored, which is why the MPH number has been
+  // drawing underneath the map, invisible, this whole time.
+  function publishFootprint(size, inset) {
+    const s = document.documentElement.style;
+    s.setProperty('--map-size', size + 'px');
+    s.setProperty('--map-inset', inset + 'px');
+  }
   let SIZE = mapSize();
   const VIEW = 520;          // metres across in follow mode
 
@@ -40,6 +49,7 @@
         'opacity:0.82;transition:opacity .3s;' +
         'box-shadow:0 4px 18px rgba(0,0,0,0.45)';
       cv.width = cv.height = SIZE * 2;               // retina
+      publishFootprint(SIZE, ins);
       this.cv = cv;
       this.ctx = cv.getContext('2d');
       // keep the map proportional when the phone rotates / window resizes
@@ -50,6 +60,7 @@
         cv.style.width = cv.style.height = SIZE + 'px';
         cv.style.right = i2 + 'px'; cv.style.bottom = i2 + 'px';
         cv.width = cv.height = SIZE * 2;
+        publishFootprint(SIZE, i2);
         cp.style.width = Math.min(400, window.innerWidth - 40) + 'px';
       };
       window.addEventListener('resize', this._onResize);

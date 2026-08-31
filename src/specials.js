@@ -36,6 +36,13 @@
     const t = new THREE.CanvasTexture(cv); t.encoding = THREE.sRGBEncoding; return t;
   }
 
+  // a web has to hang off SOMETHING: these bound the alley/street gap the
+  // Amazing net will agree to span
+  const NET_MIN_SPAN = 7;
+  const NET_MAX_SPAN = 34;
+  const NET_LIFE = 16;      // seconds a strung net survives before it frays
+  const NET_DROP = 3.2;     // how far below you it hangs — sets the bounce budget
+
   class Specials {
     constructor(scene) {
       this.scene = scene;
@@ -68,17 +75,71 @@
       this.cracks.push(rec);
     }
 
-    // --- Amazing: web-trampoline net placed below the player ---
-    trampoline(pos) {
-      const r = 5;
-      const m = new THREE.Mesh(new THREE.CircleGeometry(r, 20),
+    // --- Amazing: a web strung ACROSS a gap between two buildings ---------
+    // This used to drop a free-floating 5 m disc under the player wherever he
+    // happened to be, on no cooldown, with a bounce that ADDED energy — which
+    // is exactly the infinite-spawn ladder you could ride to the sky. Now the
+    // net has to have something to hang off: it probes for the narrowest pair
+    // of opposing facades around him and sizes itself to span them, so it
+    // visibly bites into both walls like a real web strung across an alley.
+    // No gap, no net.
+    //
+    // Returns { span } on success, or null with a reason on `this.lastNetFail`.
+    webNet(pos, city) {
+      this.lastNetFail = null;
+      if (!city) { this.lastNetFail = 'No city'; return null; }
+      const y = Math.max(1.2, pos.y - NET_DROP);   // hangs below him, in clear view
+      const N = 16, HALF = NET_MAX_SPAN * 0.5 + 4;
+      const dist = new Array(N), hitX = new Array(N), hitZ = new Array(N);
+      for (let i = 0; i < N; i++) {
+        const a = i / N * Math.PI * 2;
+        const dx = Math.cos(a), dz = Math.sin(a);
+        let d = Infinity;
+        for (let s = 1.0; s <= HALF; s += 0.6) {
+          if (city.isSolid(pos.x + dx * s, y, pos.z + dz * s)) { d = s; break; }
+        }
+        dist[i] = d;
+        hitX[i] = pos.x + dx * d; hitZ[i] = pos.z + dz * d;
+      }
+      // the narrowest crossing with a facade on BOTH sides is the alley/street
+      let best = -1, bestSpan = Infinity;
+      for (let i = 0; i < N / 2; i++) {
+        const j = i + N / 2;
+        if (!isFinite(dist[i]) || !isFinite(dist[j])) continue;
+        const span = dist[i] + dist[j];
+        if (span < bestSpan) { bestSpan = span; best = i; }
+      }
+      if (best < 0) { this.lastNetFail = 'Nothing to string it between'; return null; }
+      if (bestSpan < NET_MIN_SPAN) { this.lastNetFail = 'Too tight to web'; return null; }
+      if (bestSpan > NET_MAX_SPAN) { this.lastNetFail = 'Gap too wide to span'; return null; }
+
+      const jj = best + N / 2;
+      const cx = (hitX[best] + hitX[jj]) / 2, cz = (hitZ[best] + hitZ[jj]) / 2;
+      const ang = best / N * Math.PI * 2;
+      // rx spans wall to wall (+ a little so the rim sinks into both facades);
+      // rz is the free direction down the street, kept in proportion
+      const rx = bestSpan / 2 + 0.5;
+      const p1 = best + N / 4, p2 = (best + 3 * N / 4) % N;
+      const perp = (isFinite(dist[p1]) && isFinite(dist[p2]))
+        ? (dist[p1] + dist[p2]) / 2 : rx * 1.25;
+      const rz = Math.max(3, Math.min(rx * 1.5, perp));
+
+      const m = new THREE.Mesh(new THREE.CircleGeometry(1, 26),
         new THREE.MeshBasicMaterial({ map: this._netTex, transparent: true,
-          opacity: 0.9, side: THREE.DoubleSide, depthWrite: false }));
+          opacity: 0.92, side: THREE.DoubleSide, depthWrite: false }));
       m.rotation.x = -Math.PI / 2;
-      m.position.set(pos.x, Math.max(0.3, pos.y - 3), pos.z);
+      m.rotation.z = -ang;                 // local x lands on the span axis
+      m.scale.set(rx, rz, 1);              // pre-rotation, so x IS the span axis
+      m.position.set(cx, y, cz);
+      m.renderOrder = 2;
       this.scene.add(m);
-      this.nets.push({ mesh: m, pos: m.position.clone(), r, t: 0, cd: 0 });
-      if (this.nets.length > 6) { const old = this.nets.shift(); this.scene.remove(old.mesh); old.mesh.geometry.dispose(); old.mesh.material.dispose(); }
+      this.nets.push({ mesh: m, pos: m.position.clone(), rx, rz,
+                       ca: Math.cos(ang), sa: Math.sin(ang), t: 0, cd: 0 });
+      if (this.nets.length > 6) {
+        const old = this.nets.shift();
+        this.scene.remove(old.mesh); old.mesh.geometry.dispose(); old.mesh.material.dispose();
+      }
+      return { span: bestSpan };
     }
 
     // --- Amazing: walkable zip-line strung to a building; lasts a day cycle ---
@@ -147,16 +208,32 @@
         if (k >= 1) { rec.mesh.visible = false; this.cracks.splice(i, 1); continue; }
         rec.mesh.material.opacity = 0.95 * (1 - k);
       }
-      // trampolines: bounce a falling player, then age out over 7 s
+      // strung nets: bounce a falling player, then fray away over 16 s
       for (let i = this.nets.length - 1; i >= 0; i--) {
         const net = this.nets[i]; net.t += dt; net.cd -= dt;
-        net.mesh.material.opacity = 0.9 * Math.max(0, 1 - net.t / 7);
-        if (net.t > 7) { this.scene.remove(net.mesh); net.mesh.geometry.dispose(); net.mesh.material.dispose(); this.nets.splice(i, 1); continue; }
+        net.mesh.material.opacity = 0.92 * Math.max(0, Math.min(1, (NET_LIFE - net.t) / 3));
+        if (net.t > NET_LIFE) {
+          this.scene.remove(net.mesh); net.mesh.geometry.dispose();
+          net.mesh.material.dispose(); this.nets.splice(i, 1); continue;
+        }
         if (player && net.cd <= 0 && player.vel.y < 0) {
-          const hd = Math.hypot(player.pos.x - net.pos.x, player.pos.z - net.pos.z);
-          if (hd < net.r && Math.abs(player.pos.y - net.pos.y) < 1.6) {
-            player.vel.y = Math.min(42, Math.abs(player.vel.y) * 0.85 + 13);
+          // into the net's own frame: it's an ellipse, not a disc
+          const ox = player.pos.x - net.pos.x, oz = player.pos.z - net.pos.z;
+          const u = (ox * net.ca + oz * net.sa) / net.rx;
+          const v = (-ox * net.sa + oz * net.ca) / net.rz;
+          if (u * u + v * v < 1 && Math.abs(player.pos.y - net.pos.y) < 2.0) {
+            // LOSSY, and the additive term matters more than it looks. The old
+            // bounce returned 85% of impact speed plus a flat 13 m/s, so every
+            // bounce came back higher than the last. Any `e·v + c` bounce
+            // settles at c/(1-e); for the net to be a dead end that fixed point
+            // has to lift you LESS than the height you fall to reach the net.
+            // The net hangs NET_DROP below you, so the ceiling on c is
+            // (1-e)·sqrt(2g·NET_DROP) ≈ 3.5 — 2.5 keeps a margin. A real fall
+            // still throws you properly, because e·v dominates by then.
+            player.vel.y = Math.min(26, Math.abs(player.vel.y) * 0.55 + 2.5);
+            player.vel.x *= 0.86; player.vel.z *= 0.86;
             if (player.mode === 'ground') { player.mode = 'air'; player._airTime = 0.05; }
+            player.anchor = null;
             net.cd = 0.35;
             if (GAME.camFx) GAME.camFx.pulse = Math.max(GAME.camFx.pulse, 0.45);
             if (GAME.comicFX && GAME.settings.skin === 'noir') GAME.comicFX.pop('BOING', net.pos, 'bamf', 6);

@@ -18,8 +18,10 @@
         idx.push(a, d, b, b, d, e);
       }
       this.geo.setIndex(idx);
+      // Lambert has no `roughness` — passing it only bought a console warning
+      // on every boot. The coat is matte by construction.
       this.mesh = new THREE.Mesh(this.geo, new THREE.MeshLambertMaterial({
-        color: 0x14141a, side: THREE.DoubleSide, roughness: 1 }));
+        color: 0x14141a, side: THREE.DoubleSide }));
       this.mesh.frustumCulled = false;
       this.mesh.visible = false;
       this.mesh.castShadow = true;

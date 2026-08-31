@@ -85,6 +85,7 @@ window.GAME = {
     jumpVel: 8.5,
     crawlSpeed: 4.4,      // m/s on walls
     sprintMult: 1.9,      // Shift while running or crawling
+    waldoStanceMult: 1.45, // Iron Spider riding on the waldoes (hold K)
     wallJump: 6,          // push-off speed leaving a wall
     ropeSlack: 0.99,      // web attaches essentially taut
     ropeMin: 6,

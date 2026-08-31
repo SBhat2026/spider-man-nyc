@@ -133,7 +133,10 @@
       // small black spider, gold-rimmed expressive eyes
       label: 'Stark', order: 1,
       primary: { color: 0xd4291f, map: ['#d4291f', '#141414'], rough: 0.68 },
-      secondary: { color: 0x17285c, rough: 0.8, emi: 0x0a1c4a, emiI: 0.3 },
+      // the legs used to be a bare colour with a blue emissive on top, which lit
+      // them from the inside and read as cornflower rather than deep navy. Same
+      // webbed treatment as the arms now — the navy is a real navy.
+      secondary: { color: 0x17285c, map: ['#1b2c63', '#0a1130'], rough: 0.76 },
       accent: { color: 0xd4291f, map: ['#d4291f', '#141414'], rough: 0.68 },
       torso: { base: '#d4291f', web: '#141414', emblem: '#0e0e0e', emblemScale: 0.72,
                side: '#17285c' },
@@ -152,15 +155,19 @@
       mods: { jump: 1.35, steer: 1.5, assist: 1.25, release: 1.35 },
     },
     iron: {
-      // Iron Spider: crimson + gold trim over navy panels, cyan lenses
+      // Iron Spider: crimson + gold trim over navy panels, cyan lenses.
+      // Metalness was 0.85-1.0 across the board, and a fully metallic surface has
+      // no diffuse at all — its colour comes entirely from what it reflects. With
+      // only a 128px sky probe to reflect, the whole suit collapsed to near-black
+      // maroon. Half-metal keeps the lacquered sheen but lets the crimson read.
       label: 'Iron Spider', order: 3,
-      primary: { color: 0x9e1420, metal: 0.9, rough: 0.27, envI: 1.5 },
-      secondary: { color: 0x18234f, metal: 0.85, rough: 0.32, envI: 1.3 },
-      accent: { color: 0xd9a531, metal: 1.0, rough: 0.19, envI: 1.9 },
-      torso: { base: '#9e1420', emblem: '#d9a531', emblemScale: 1.22, emblemWide: true,
-               trim: '#d9a531' },
-      torsoMetal: true,
-      lens: 0xbfe9f5, lensEmi: 0x2f7d8f, rim: 0xd9a531,
+      primary: { color: 0xc02230, metal: 0.5, rough: 0.28, envI: 1.25 },
+      secondary: { color: 0x1c2b63, metal: 0.45, rough: 0.34, envI: 1.1 },
+      accent: { color: 0xe4b447, metal: 0.85, rough: 0.2, envI: 1.7 },
+      torso: { base: '#b41f2c', emblem: '#e4b447', emblemScale: 1.22, emblemWide: true,
+               trim: '#e4b447' },
+      torsoMetal: true, torsoMetalness: 0.5,
+      lens: 0xa9e4f5, lensEmi: 0x2f7d8f, rim: 0xe4b447,
     },
     miles: {
       // Miles Morales: near-black navy + faint webbing, red spray-paint spider,
@@ -186,7 +193,7 @@
       // black spider with long legs, chrome/silver eye rims
       label: 'Amazing', order: 6, reward: true,
       primary: { color: 0xc21f1c, map: ['#c21f1c', '#101014'], rough: 0.6 },
-      secondary: { color: 0x12141d, rough: 0.7 },
+      secondary: { color: 0x12141d, map: ['#1a1d29', '#07080d'], rough: 0.7 },
       accent: { color: 0xc21f1c, map: ['#c21f1c', '#101014'], rough: 0.6 },
       torso: { base: '#c21f1c', web: '#101014', emblem: '#0c0c0e', emblemScale: 1.28,
                emblemWide: true, side: '#12141d' },
@@ -234,16 +241,34 @@
   GAME.SKIN_ORDER = Object.keys(GAME.SKINS)
     .sort((a, b) => GAME.SKINS[a].order - GAME.SKINS[b].order);
 
+  // COLOUR SPACE: this build runs three r147 with ColorManagement.legacyMode on,
+  // so a raw hex on `material.color` is consumed as LINEAR and then sRGB-encoded
+  // on the way out — every un-mapped slot rendered roughly twice as bright as
+  // authored (Stark's deep navy legs came out cornflower). Textures don't have
+  // that problem: they carry sRGBEncoding and get decoded properly, which is why
+  // the mapped torso always looked right.
+  //
+  // So: a mapped slot keeps `color` at white and lets the (correctly decoded)
+  // texture carry the colour — exactly how the torso works — and an un-mapped
+  // slot converts its hex from sRGB by hand. Both paths now render the hex the
+  // definition actually asks for.
   function skinMaterial(def) {
     const m = new THREE.MeshStandardMaterial({
-      color: def.color,
       roughness: def.rough !== undefined ? def.rough : 0.7,
       metalness: def.metal || 0.05,
     });
     // map = [base, lineColor, density?, highlightColor?]
-    if (def.map) m.map = webTexture(def.map[0], def.map[1], def.map[2], def.map[3]);
+    if (def.map) {
+      m.map = webTexture(def.map[0], def.map[1], def.map[2], def.map[3]);
+      m.color.setHex(0xffffff);
+    } else {
+      m.color.setHex(def.color).convertSRGBToLinear();
+    }
     m.envMapIntensity = def.envI || 0.22;
-    if (def.emi) { m.emissive = new THREE.Color(def.emi); m.emissiveIntensity = def.emiI || 0.3; }
+    if (def.emi) {
+      m.emissive = new THREE.Color(def.emi).convertSRGBToLinear();
+      m.emissiveIntensity = def.emiI || 0.3;
+    }
     return m;
   }
 
@@ -327,6 +352,42 @@
     return g;
   }
 
+  // ---------- waldo kinematics (Iron Spider) ----------
+  // The mounts sit ~1.5 m above whatever surface he's on, so a limb that can
+  // actually plant out beside him has to span ~1.6 m — and to plant with a
+  // spider's bent knee rather than a rigid stilt it needs meaningful slack on
+  // top of that. Hence the length: ~2 m per limb, close to 3x the stubs these
+  // used to be, and in line with the reference stills where each waldo arcs out
+  // well over a body-height.
+  const WALDO_L1 = 0.96;          // boom
+  const WALDO_L2 = 1.06;          // forearm + the reach the blade adds
+  const WALDO_LIFT = 0.22;        // how far the body rides up in spider-stance
+  const WALDO_SPAN = (WALDO_L1 + WALDO_L2) * 0.93;   // usable reach, keeps a bend
+
+  // Two-bone IK for one waldo. The boom splays about z and pitches about x
+  // (Euler XYZ applies Rz first, then Rx) and the elbow bends about x only, so
+  // the chain always lives in one plane and the solve is just an aim plus the
+  // planar law of cosines. Target is in limb-root space.
+  function solveWaldoIK(tx, ty, tz) {
+    let d = Math.hypot(tx, ty, tz);
+    if (d < 1e-4) d = 1e-4;
+    const dmin = Math.abs(WALDO_L1 - WALDO_L2) + 0.02;
+    const dmax = (WALDO_L1 + WALDO_L2) * 0.985;
+    const dc = Math.max(dmin, Math.min(dmax, d));
+    const ux = tx / d, uy = ty / d, uz = tz / d;
+    const z = -Math.asin(Math.max(-1, Math.min(1, ux)));   // splay
+    const pitch = Math.atan2(uz, uy);                      // aim along the target
+    const ca = (dc * dc + WALDO_L1 * WALDO_L1 - WALDO_L2 * WALDO_L2) / (2 * dc * WALDO_L1);
+    const cb = (WALDO_L1 * WALDO_L1 + WALDO_L2 * WALDO_L2 - dc * dc) / (2 * WALDO_L1 * WALDO_L2);
+    const a = Math.acos(Math.max(-1, Math.min(1, ca)));    // boom offset from the aim
+    const b = Math.acos(Math.max(-1, Math.min(1, cb)));    // elbow interior angle
+    // Two branches solve the same triangle. This one drops the boom below the
+    // aim line and folds the forearm forward under it, which is the arachnid
+    // silhouette; the mirror (pitch + a, -(π - b)) throws the booms out
+    // horizontally and crosses the limbs over each other.
+    return { z, x: pitch - a, f: Math.PI - b };
+  }
+
   // suit regions — cross-section boundaries meet exactly so color blocks are
   // continuous, like the panel seams on the real suit
   function buildParts() {
@@ -341,7 +402,7 @@
       { y: 0.30, rx: 0.150, rz: 0.105 },
       { y: 0.44, rx: 0.185, rz: 0.118 },
       { y: 0.52, rx: 0.190, rz: 0.115 },
-      { y: 0.58, rx: 0.150, rz: 0.100 },
+      { y: 0.58, rx: 0.164, rz: 0.104 },   // trap line — meets the deltoid cap
       { y: 0.64, rx: 0.078, rz: 0.072 },
       { y: 0.72, rx: 0.046, rz: 0.046 },
     ], 0, 0, true, true, 0.72), 'torso', null, ['spine', 'neckHead']);
@@ -353,6 +414,15 @@
       { y: 0.06,  rx: 0.150, rz: 0.104 },
       { y: 0.16,  rx: 0.128, rz: 0.098 },
     ], 0, 0, true, false), 'secondary', null, ['hips', 'spine']);
+
+    // TRAPEZIUS YOKE — an elliptical cross-section can't hold a flat shoulder
+    // shelf, so even with the deltoid there was a sliver of open sky between the
+    // arm and the neck. This pair of tilted ellipsoids bridges that span; it
+    // rides the spine (a real trap doesn't travel with the arm) and wears the
+    // arm's material so the shoulder reads as one continuous surface.
+    for (const s of [-1, 1])
+      add(ballGeo(0.100, [0.132 * s, 0.567, 0.004], [0, 0, -s * 0.46],
+                  [1.32, 0.74, 0.88]), 'primary', 'spine');
 
     // head + lenses (locked to the head bone). Lenses trimmed ~14% smaller.
     add(ballGeo(0.115, [0, 0.815, 0.005], null, [0.94, 1.2, 1.04]), 'primary', 'neckHead');
@@ -366,13 +436,19 @@
     // arms → shoulder/elbow chain only
     for (const s of [1, -1]) {
       const sh = s > 0 ? 'shoulderR' : 'shoulderL', el = s > 0 ? 'elbowR' : 'elbowL';
+      // The arm used to start at rx 0.052 on an offset of 0.245 — an inner edge
+      // of 0.193 against a torso half-width of 0.150, i.e. a 4 cm hole of open
+      // sky at the armpit that made the arms read as detached sticks. The first
+      // two sections are now a real deltoid whose inner edge tucks INSIDE the
+      // trap line, so the shoulder is a continuous surface.
       add(loftGeo([
-        { y: 0.57, rx: 0.052, rz: 0.048 },
-        { y: 0.50, rx: 0.068, rz: 0.062 },
-        { y: 0.42, rx: 0.060, rz: 0.055 },
-        { y: 0.28, rx: 0.047, rz: 0.044 },
-        { y: 0.20, rx: 0.054, rz: 0.050 },
-        { y: 0.02, rx: 0.035, rz: 0.033 },
+        { y: 0.605, rx: 0.070, rz: 0.064 },
+        { y: 0.568, rx: 0.100, rz: 0.088 },   // deltoid crest, overlaps the torso
+        { y: 0.512, rx: 0.086, rz: 0.076 },
+        { y: 0.44,  rx: 0.062, rz: 0.057 },
+        { y: 0.28,  rx: 0.047, rz: 0.044 },
+        { y: 0.20,  rx: 0.054, rz: 0.050 },
+        { y: 0.02,  rx: 0.035, rz: 0.033 },
       ], 0.245 * s, 0, true, true), 'primary', null, [sh, el]);
       add(ballGeo(0.052, [0.245 * s, -0.035, 0.008], null, [0.82, 1.25, 0.95]), 'primary', el);
     }
@@ -529,32 +605,103 @@
         this.body.add(this.wingL, this.wingR);
       }
       // WALDOES (Iron Spider): four articulated mechanical legs from the upper
-      // back — the default appendages for this suit, and the tool for the dash.
+      // back — the default appendages for this suit, the tool for the dash, and
+      // (in spider-stance) what he actually walks on.
+      //
+      // Built to the Infinity War reference: brushed GOLD outer shells over a
+      // dark navy inner strut, three joints — a short mount collar, a long
+      // upper boom, a long forearm — and a scythe-like blade tip that curves to
+      // a point. They were previously 0.64 m of thin dark-red rod that read as
+      // insect antennae; the whole limb is now ~1.35 m, a bit over 2x, which
+      // puts the tips well clear of the silhouette exactly like the reference.
       {
-        const legMat = new THREE.MeshStandardMaterial({ color: 0x9a1b26, metalness: 0.92, roughness: 0.28 });
-        const tipMat = new THREE.MeshStandardMaterial({ color: 0xd9a531, metalness: 1, roughness: 0.2 });
-        const seg = (len, r0, r1, mat) => { const g = new THREE.CylinderGeometry(r1, r0, len, 6); g.translate(0, len / 2, 0); return new THREE.Mesh(g, mat); };
+        // half-metal for the same reason the suit is: a fully metallic surface
+        // reflecting only a 128px sky probe reads as a dark stick, not brass
+        const goldMat = new THREE.MeshStandardMaterial({
+          color: new THREE.Color(0xdcae44).convertSRGBToLinear(),
+          metalness: 0.55, roughness: 0.26, envMapIntensity: 1.5 });
+        const darkMat = new THREE.MeshStandardMaterial({
+          color: new THREE.Color(0x1b2140).convertSRGBToLinear(),
+          metalness: 0.45, roughness: 0.45, envMapIntensity: 0.9 });
+        // a tapered segment running up its own +Y, origin at its root
+        const seg = (len, r0, r1, mat, sides) => {
+          const g = new THREE.CylinderGeometry(r1, r0, len, sides || 8);
+          g.translate(0, len / 2, 0);
+          return new THREE.Mesh(g, mat);
+        };
+        // the dark strut showing between the gold shells at a joint
+        const knuckle = (r) => new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8), darkMat);
+        // scythe blade: a chain of shrinking boxes swept along an arc, which is
+        // what gives the reference tip its inward hook
+        const bladeOf = (len) => {
+          const b = new THREE.Group();
+          const N = 9;
+          let px = 0, py = 0, a = 0;
+          for (let i = 0; i < N; i++) {
+            const k = i / (N - 1);
+            const w = 0.040 * (1 - k) + 0.005, th = 0.020 * (1 - k) + 0.004;
+            const sl = len / N;
+            const m = new THREE.Mesh(new THREE.BoxGeometry(th, sl * 1.25, w), goldMat);
+            m.position.set(px + Math.sin(a) * sl * 0.5, py + Math.cos(a) * sl * 0.5, 0);
+            m.rotation.z = -a;
+            b.add(m);
+            px += Math.sin(a) * sl; py += Math.cos(a) * sl;
+            a += 0.30;                       // constant curvature → clean hook
+          }
+          return b;
+        };
         this.waldos = new THREE.Group();
         this.waldoLegs = [];
-        const mounts = [[-0.15, 0.55, -0.13, 1], [0.15, 0.55, -0.13, -1],
-                        [-0.12, 0.40, -0.15, 1], [0.12, 0.40, -0.15, -1]];
+        // mounts sit on the upper back, spread wider than before so the four
+        // limbs fan instead of bunching behind the head
+        const mounts = [[-0.20, 0.545, -0.115, 1], [0.20, 0.545, -0.115, -1],
+                        [-0.17, 0.375, -0.135, 1], [0.17, 0.375, -0.135, -1]];
+        const UPPER = WALDO_L1, FORE = 0.90, BLADE = 0.26;   // ~2.1 m per limb
         let li = 0;
         for (const [mx, my, mz, sgn] of mounts) {
-          const upper = seg(0.34, 0.032, 0.022, legMat);
-          upper.position.set(mx, my, mz);
-          const baseZ = sgn * (li < 2 ? 0.5 : 0.72), baseX = -0.55;
+          const root = new THREE.Group();
+          root.position.set(mx, my, mz);
+          // mount collar — the housing the boom pivots out of
+          const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.058, 0.066, 0.10, 8), darkMat);
+          collar.rotation.z = Math.PI / 2 * sgn * 0.35;
+          root.add(collar);
+
+          const upper = seg(UPPER, 0.052, 0.034, goldMat);
+          // dark inner strut inlaid along the boom (the navy stripe on the shell)
+          const strut = seg(UPPER * 0.86, 0.034, 0.024, darkMat, 6);
+          strut.position.set(0, UPPER * 0.07, -0.024);
+          upper.add(strut);
+          upper.add(knuckle(0.056));
+          root.add(upper);
+
+          const fore = seg(FORE, 0.034, 0.019, goldMat);
+          fore.position.set(0, UPPER, 0);
+          const foreStrut = seg(FORE * 0.8, 0.023, 0.013, darkMat, 6);
+          foreStrut.position.set(0, FORE * 0.1, -0.016);
+          fore.add(foreStrut);
+          const elbow = knuckle(0.042); fore.add(elbow);
+          upper.add(fore);
+
+          const blade = bladeOf(BLADE);
+          blade.position.set(0, FORE, 0);
+          blade.rotation.z = sgn * 0.12;
+          fore.add(blade);
+
+          // rest pose: fanned out and back over the shoulders, like the stills
+          const baseZ = sgn * (li < 2 ? 0.62 : 0.92);
+          const baseX = li < 2 ? -0.72 : -0.34;
+          const baseFore = li < 2 ? 1.28 : 1.05;
           upper.rotation.z = baseZ; upper.rotation.x = baseX;
-          const fore = seg(0.30, 0.021, 0.008, legMat);
-          fore.position.set(0, 0.34, 0); fore.rotation.x = 1.15;
-          const tip = seg(0.06, 0.012, 0.001, tipMat);
-          tip.position.set(0, 0.30, 0); tip.rotation.x = 0.4;
-          fore.add(tip); upper.add(fore);
-          this.waldos.add(upper);
-          this.waldoLegs.push({ upper, fore, baseZ, baseX, phase: li * 1.7 });
+          fore.rotation.x = baseFore;
+          this.waldos.add(root);
+          this.waldoLegs.push({ root, upper, fore, blade, baseZ, baseX, baseFore,
+                                sgn, front: li < 2, phase: (li % 2) * Math.PI + (li < 2 ? 0 : Math.PI / 2),
+                                len: UPPER + FORE });
           li++;
         }
         this.waldos.visible = false;
         this._waldoReach = 0; this._waldoT = 0;
+        this._waldoStance = 0; this._waldoGait = 0;
         this.body.add(this.waldos);
       }
       this.root.add(this.body);
@@ -676,7 +823,9 @@
       const torsoMat = new THREE.MeshStandardMaterial({
         map: torsoTexture(name, def),
         roughness: def.primary.rough !== undefined ? def.primary.rough : 0.7,
-        metalness: def.torsoMetal ? (def.primary.metal || 0.9) : (def.primary.metal || 0.05),
+        metalness: def.torsoMetal
+          ? (def.torsoMetalness !== undefined ? def.torsoMetalness : (def.primary.metal || 0.9))
+          : (def.primary.metal || 0.05),
       });
       torsoMat.envMapIntensity = def.primary.envI || 0.22;
       const mats = {
@@ -685,9 +834,12 @@
         secondary: skinMaterial(def.secondary),
         accent: skinMaterial(def.accent),
         lens: new THREE.MeshStandardMaterial({
-          color: def.lens, emissive: def.lensEmi, roughness: 0.25, metalness: 0.1 }),
+          color: new THREE.Color(def.lens).convertSRGBToLinear(),
+          emissive: new THREE.Color(def.lensEmi).convertSRGBToLinear(),
+          roughness: 0.25, metalness: 0.1 }),
         rim: new THREE.MeshStandardMaterial({
-          color: def.rim, roughness: 0.5, metalness: 0.2 }),
+          color: new THREE.Color(def.rim).convertSRGBToLinear(),
+          roughness: 0.5, metalness: 0.2 }),
       };
       if (this.fedora) this.fedora.visible = !!def.fedora;
       if (this.waldos) this.waldos.visible = (name === 'iron');
@@ -1112,18 +1264,81 @@
           this.wingR.scale.set(Math.max(0.01, this._wingK), 1, 1);
         }
       }
-      // waldoes: idle sway while walking/climbing, thrust forward on a dash.
-      // On a wall (crawl/wallrun) they splay wider to "grip" the facade.
+      // WALDOES. Three behaviours blended by how much surface is under him:
+      //   airborne  → the fanned idle sway (plus the dash thrust)
+      //   surfaced  → a real four-point gait: each limb IK-solves onto a plant
+      //               point on the surface, steps in a diagonal trot, and the
+      //               stride length follows travel speed
+      //   stance    → the body rides UP on the limbs and the plants push out
+      //               wide, so he's carried on the waldoes rather than his feet
+      // The surface plane is known without a raycast: the body basis already has
+      // its up-axis on the surface normal (ground, roof, or facade), so in body
+      // space the surface is always the plane y = -(0.97 + bodyY).
       if (this.waldos && this.waldos.visible) {
         this._waldoT += dt;
         this._waldoReach = Math.max(0, this._waldoReach - dt * 2.2);
-        const onWall = state.mode === 'crawl' || state.mode === 'wallrun';
         const reach = this._waldoReach;
+        const surfaced = state.mode === 'ground' || state.mode === 'crawl' ||
+                         state.mode === 'wallrun';
+        const onWall = state.mode === 'crawl' || state.mode === 'wallrun';
+        const wantStance = surfaced && state.waldoStance ? 1 : 0;
+        this._waldoStance += (wantStance - this._waldoStance) * Math.min(1, dt * 5);
+        const st = this._waldoStance;
+        // Plant in spider-stance, and always on a facade (the waldoes grip the
+        // wall whether or not he's riding them). Free-standing on a roof they
+        // stay fanned, as in the stills. A dash overrides everything.
+        const wantPlant = Math.max(st, onWall ? 1 : 0) * (1 - Math.min(1, reach * 1.6));
+        this._waldoGait += (wantPlant - this._waldoGait) * Math.min(1, dt * 6);
+        const plantK = this._waldoGait;
+
+        // stride cycles with distance travelled, so the feet don't skate
+        const spd = Math.min(state.speed || 0, 18);
+        this._waldoStep = (this._waldoStep || 0) + dt * (1.5 + spd * 0.85);
+        const stride = Math.min(0.42, 0.10 + spd * 0.035);
+        const groundY = -(0.97 + (this._pose.bodyY || 0)) - st * WALDO_LIFT;
+
         for (const L of this.waldoLegs) {
+          // ---- idle fan (airborne / dash) ----
           const sway = Math.sin(this._waldoT * 2.4 + L.phase) * 0.11;
-          L.upper.rotation.x = L.baseX + sway - reach * 1.0 + (onWall ? 0.25 : 0);
-          L.upper.rotation.z = L.baseZ + (onWall ? Math.sign(L.baseZ) * 0.22 : 0);
-          L.fore.rotation.x = 1.15 - sway * 0.6 - reach * 0.7 - (onWall ? 0.3 : 0);
+          const idleZ = L.baseZ;
+          const idleX = L.baseX + sway - reach * 1.05;
+          const idleF = L.baseFore - sway * 0.6 - reach * 0.85;
+
+          let outZ = idleZ, outX = idleX, outF = idleF;
+
+          if (plantK > 0.01) {
+            // ---- planted gait ----
+            // diagonal trot: front-left steps with rear-right
+            const ph = this._waldoStep + L.phase;
+            const swingPhase = (Math.sin(ph) + 1) * 0.5;     // 0 planted … 1 mid-swing
+            const lifted = Math.max(0, Math.sin(ph));
+            // plant point in body space: out to the side, front pair ahead
+            const outward = (L.front ? 0.52 : 0.58) + st * 0.10;
+            const along = (L.front ? 0.44 : -0.30) + st * (L.front ? 0.06 : -0.06);
+            const px = -L.sgn * outward;                     // sgn is -1 on the right
+            const pz = along + Math.cos(ph) * stride;
+            const py = groundY + lifted * (0.24 + st * 0.10);
+            // → limb-root local (root carries position only, no rotation)
+            let tx = px - L.root.position.x,
+                ty = py - L.root.position.y,
+                tz = pz - L.root.position.z;
+            // Keep the plant reachable WITH a bend. Scaling the whole vector
+            // would lift the tip off the surface, so only the horizontal part
+            // gets pulled in — the limb steps closer to the body instead of
+            // locking out into a straight stilt.
+            const room = Math.sqrt(Math.max(0, WALDO_SPAN * WALDO_SPAN - ty * ty));
+            const h = Math.hypot(tx, tz);
+            if (h > room) { const c2 = room / h; tx *= c2; tz *= c2; }
+            const s = solveWaldoIK(tx, ty, tz);
+            // ease between planted and swinging so the lift reads as a step
+            const k = plantK * (0.72 + 0.28 * (1 - swingPhase * 0.5));
+            outZ = idleZ + (s.z - idleZ) * k;
+            outX = idleX + (s.x - idleX) * k;
+            outF = idleF + (s.f - idleF) * k;
+          }
+          L.upper.rotation.z = outZ;
+          L.upper.rotation.x = outX;
+          L.fore.rotation.x = outF;
         }
       }
 
@@ -1166,6 +1381,18 @@
         target.headY = (target.headY || 0) + 0.45 * leanT * k;
       }
       this._applyPose(target, dt);
+      // SPIDER-STANCE: the waldoes take his weight, so the body rides up on them
+      // and the human legs tuck out of the way. Body-local up is the surface
+      // normal, so this lifts him off a facade exactly as it does off a roof.
+      if (this._waldoStance > 0.001) {
+        const st = this._waldoStance;
+        this.body.position.y += WALDO_LIFT * st;
+        const toward = (bone, axis, v) =>
+          bone.rotation[axis] += (v - bone.rotation[axis]) * st;
+        toward(this.legR.hip, 'x', -0.95);  toward(this.legL.hip, 'x', -0.95);
+        toward(this.legR.knee, 'x', 1.5);   toward(this.legL.knee, 'x', 1.5);
+        toward(this.legR.hip, 'z', 0.22);   toward(this.legL.hip, 'z', -0.22);
+      }
       // banking fights the flip axis — suspend it while rotating
       if (Math.abs(this._bank) > 1e-4 && this._flipT >= 1) this.body.rotateZ(this._bank);
 
