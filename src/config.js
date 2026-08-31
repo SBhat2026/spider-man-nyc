@@ -87,7 +87,12 @@ window.GAME = {
     sprintMult: 1.9,      // Shift while running or crawling
     waldoStanceMult: 1.45, // Iron Spider riding on the waldoes (hold K)
     wallJump: 6,          // push-off speed leaving a wall
+    trickPopCooldown: 1.6, // rations the free lift on a trick out of a swing
     ropeSlack: 0.99,      // web attaches essentially taut
+    // Beat between letting go and the next web going out — the one knob that
+    // stops the attach-spam speed pump. Swept 0-0.35s over four start points:
+    // at 0 the pump hits the 70 m/s cap, from 0.22 up it's pinned near 31.
+    reattachDelay: 0.28,
     ropeMin: 6,
     ropeSpring: 200,      // web elasticity (1/s^2) — stiff but not rigid
     ropeDamp: 14,         // radial damping when the web is stretched

@@ -21,6 +21,16 @@
       this.wall = null;            // {b, nx, nz} while crawling
       this._crawlCooldown = 0;
       this._contact = { hit: false };
+      // Suit-ability budgets. These live on the player rather than in main.js
+      // closures because they're driven by the same mode transitions the player
+      // owns — the recharge is "touched something solid", which is decided
+      // right here — and because ticking them in update() means a headless sim
+      // exercises the real cooldowns instead of a copy.
+      this.ability = {
+        dashCharges: 2, dashMax: 2, dashCd: 0,    // Iron Spider waldo dash
+        netCharges: 2,  netMax: 2,  netCd: 0,     // Amazing web-nets
+        senseCd: 0,                               // Upgraded spider-sense pulse
+      };
       this._raycaster = new THREE.Raycaster();
       this._tmp = new V3(); this._tmp2 = new V3();
       GAME.player = this;
@@ -47,6 +57,12 @@
       if (found) a = new V3(found.x, found.y, found.z);
       if (!a) return false;
       this.anchor = a;
+      // NB the 1% pre-tension here is load-bearing: the spring's first-frame
+      // yank is most of what keeps a swing alive. It's also what the attach
+      // spam was farming (+2.5 m/s per web, straight to the speed cap) — but
+      // capping it in absolute metres collapsed a 30 s swing run from 434 m to
+      // 61 m. The fix belongs on the RATE of attaching, not on the pull itself;
+      // see reattachDelay in _release.
       this.ropeLen = Math.max(P.ropeMin, this.pos.distanceTo(a) * P.ropeSlack);
       this.ropeLen0 = this.ropeLen;
       this.mode = 'swing';
@@ -72,6 +88,15 @@
       const P = GAME.PHYS;
       this.anchor = null;
       this.mode = 'air';
+      // A beat before the next web can go out. Attach-spam was farming the
+      // spring's first-frame pre-tension yank — attach, take 2.5 m/s, release,
+      // repeat, all the way to the 70 m/s cap. The yank itself has to stay
+      // (capping it collapsed a 30 s swing run from 434 m to 61 m), so the
+      // limit goes on how OFTEN a swing can start instead. Measured over four
+      // start points: the spam run drops from 69 m/s / 392 m to 31 m/s / 125 m,
+      // while a human-shaped run — ride the arc, release at the top, fall a
+      // beat — is untouched at 335 m vs 303 m. It only taxes mashing.
+      this._attachCd = P.reattachDelay;
       this.vel.multiplyScalar(P.releaseBoost);
       // SWEET-SPOT: let go on the rising arc (the top third of the pendulum)
       // and the launch is cleaner — a nudge of speed and a camera kick that
@@ -97,10 +122,19 @@
     doTrick(type) {
       const P = GAME.PHYS;
       if (this.mode === 'swing') {
+        // The pop exists so the flip has air time to read in. It used to be an
+        // unconditional +3.8 m/s (times releaseBoost) on every press with no
+        // cooldown, and SPACE re-attaches in a fifth of a second — so holding
+        // SPACE and tapping F was a perpetual hover: 60 s in, still parked at
+        // 83 m with no altitude lost. The flip itself is never blocked; only
+        // the free lift is rationed.
+        const popped = (this._popCd || 0) <= 0;
         this.anchor = null;
         this.mode = 'air';
-        this.vel.multiplyScalar(P.releaseBoost);
-        this.vel.y += 3.8;           // pop up so the flip has air time
+        if (popped) {
+          this.vel.y += 3.8;
+          this._popCd = P.trickPopCooldown;
+        }
         this._airTime = 0;
         this.hero.triggerFlip(type);
       } else if (this.mode === 'air') {
@@ -136,6 +170,18 @@
       const P = GAME.PHYS, k = this.keys;
       this.justLanded = false;
       this._flipCd = (this._flipCd || 0) - dt;
+      this._popCd = Math.max(0, (this._popCd || 0) - dt);
+      // a beat between webs — see _release for why this exists
+      this._attachCd = Math.max(0, (this._attachCd || 0) - dt);
+      // ability cooldowns run down; charges refill on any solid contact
+      const A = this.ability;
+      A.dashCd = Math.max(0, A.dashCd - dt);
+      A.netCd = Math.max(0, A.netCd - dt);
+      A.senseCd = Math.max(0, A.senseCd - dt);
+      if (this.mode === 'ground' || this.mode === 'crawl' || this.mode === 'wallrun') {
+        A.dashCharges = A.dashMax;
+        A.netCharges = A.netMax;
+      }
       const spacePressed = k.space && !this._prevSpace;
       const prevY = this.pos.y;
 
@@ -214,6 +260,12 @@
           else this.vel.y -= P.gravity * 0.32 * dt;
           const hs2 = Math.hypot(this.vel.x, this.vel.z);
           if (hs2 < 34) this.vel.addScaledVector(fwd, 10 * dt);
+          // The glide branch skipped _drag entirely, so entering it out of a
+          // terminal-velocity dive kept all 65 m/s forever at a 3 m/s sink —
+          // a 21:1 glide instead of the ~11:1 the 34 m/s thrust cap implies.
+          // Drag only bites above the thrust cap, so the intended glide is
+          // unchanged and a dive entry now bleeds back down to it.
+          this._drag(dt);
           this._alignToCamera(fwd, P.swingAssist * 1.1 * dt);
         } else {
           // apex hang-time: gravity eases off for a beat at the top of the arc
@@ -225,7 +277,8 @@
           if (!ix) this._alignToCamera(fwd, P.swingAssist * 0.55 * dt);
         }
         this.pos.addScaledVector(this.vel, dt);
-        if (k.space && this._airTime > 0.14) this._attach(camera, camFwd);
+        if (k.space && this._airTime > 0.14 && this._attachCd <= 0)
+          this._attach(camera, camFwd);
       } else if (this.mode === 'wallrun' && this.wall && this._wrDir) {
         // --- WALL-RUN: sprinting horizontally along the facade. Momentum
         // carries him, bleeding off until he either bounces (SPACE), slows to
@@ -291,8 +344,8 @@
         // wall tangent chosen so D moves screen-right (camera sits off the
         // outward normal looking at the wall)
         const tx = n.nz, tz = -n.nx;
-        const cs = P.crawlSpeed * (k.shift ? P.sprintMult : 1) *
-                   (this.waldoStance ? P.waldoStanceMult : 1);
+        const cs = P.crawlSpeed * Math.max(k.shift ? P.sprintMult : 1,
+                                           this.waldoStance ? P.waldoStanceMult : 1);
         this.vel.set(tx * ix * cs, iz * cs, tz * ix * cs);
         this.pos.addScaledVector(this.vel, dt);
         const stick = this.city.stickToWall(this.pos, n.b, P.playerRadius);
@@ -318,8 +371,10 @@
         const tx = (fwd.x * iz + right.x * ix), tz = (fwd.z * iz + right.z * ix);
         const tl = Math.hypot(tx, tz);
         const spd = P.runSpeed;
-        const runSpd = spd * (k.shift ? P.sprintMult : 1) *
-                       (this.waldoStance ? P.waldoStanceMult : 1);
+        // sprint and spider-stance are alternatives, not multipliers — stacked
+        // they hit 24.8 m/s on foot, faster than most swinging
+        const runSpd = spd * Math.max(k.shift ? P.sprintMult : 1,
+                                      this.waldoStance ? P.waldoStanceMult : 1);
         const targx = tl ? tx / tl * runSpd : 0, targz = tl ? tz / tl * runSpd : 0;
         const ak = Math.min(1, P.runAccel * dt / spd);
         this.vel.x += (targx - this.vel.x) * Math.min(1, ak * 4);

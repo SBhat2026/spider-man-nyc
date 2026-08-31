@@ -700,19 +700,35 @@
   // Amazing web-nets are a finite resource: two in the air, reloaded the moment
   // he touches anything solid. Together with the span requirement and the lossy
   // bounce, that's what stops the net ladder to the stratosphere.
-  const NET_MAX_CHARGES = 2;
-  let netCharges = NET_MAX_CHARGES, netCd = 0;
-  GAME.netState = () => ({ charges: netCharges, max: NET_MAX_CHARGES });
+  GAME.netState = () => ({ charges: player.ability.netCharges,
+                           max: player.ability.netMax });
+  // The Iron Spider dash needs the same treatment for the same reason. It used
+  // to add 17 m/s in the look direction with NO cooldown, and the vertical
+  // component was free to point straight up — so holding G while looking up
+  // pinned you at the 70 m/s speed cap and climbed 700 m in ten seconds. Even
+  // at a comfortable 10 presses/second it was a rocket, not a lunge.
+  GAME.dashState = () => ({ charges: player.ability.dashCharges,
+                            max: player.ability.dashMax });
   function suitSpecial() {
     if (!playing || !player) return;
     camera.getWorldDirection(_sfwd);
     const skin = GAME.settings.skin;
+    const A = player.ability;
     if (skin === 'iron') {
       // Waldo dash: a mechanical lunge in the look direction (+ auto-catch is
       // just the existing wall-contact grab; a crack marks the push-off point).
-      const b = new THREE.Vector3(_sfwd.x, Math.max(0.18, _sfwd.y * 0.5 + 0.2), _sfwd.z).normalize();
+      if (A.dashCd > 0) return;
+      const onFoot = player.mode === 'ground' || player.mode === 'crawl' ||
+                     player.mode === 'wallrun';
+      if (!onFoot && A.dashCharges <= 0) { hint('Waldoes spent — touch down to reset'); return; }
+      // A lunge throws you FORWARD. Capping the vertical share keeps a
+      // look-straight-up dash from being pure lift.
+      const up = Math.max(0.18, Math.min(0.5, _sfwd.y * 0.5 + 0.2));
+      const b = new THREE.Vector3(_sfwd.x, up, _sfwd.z).normalize();
       player.vel.addScaledVector(b, 17);
-      if (player.mode === 'ground' || player.mode === 'crawl') { player.mode = 'air'; player._airTime = 0.05; player.anchor = null; }
+      if (onFoot) { player.mode = 'air'; player._airTime = 0.05; player.anchor = null; }
+      else A.dashCharges--;
+      A.dashCd = 0.45;
       if (player.hero.waldoReach) player.hero.waldoReach();
       if (GAME.specials) GAME.specials.crack(player.pos, new THREE.Vector3(0, 1, 0));
       if (GAME.camFx) GAME.camFx.pulse = Math.max(GAME.camFx.pulse, 0.5);
@@ -726,16 +742,21 @@
         const ok = GAME.specials.zipline(player.pos, tgt);
         hint(ok ? 'Zip-line strung' : 'No anchor in sight');
       } else if (GAME.specials) {
-        if (netCd > 0) return;
-        if (netCharges <= 0) { hint('No web left — touch down to reload'); return; }
+        if (A.netCd > 0) return;
+        if (A.netCharges <= 0) { hint('No web left — touch down to reload'); return; }
         const res = GAME.specials.webNet(player.pos, city);
         if (!res) { hint(GAME.specials.lastNetFail || 'Nothing to string it between'); return; }
-        netCharges--; netCd = 0.55;
+        A.netCharges--; A.netCd = 0.55;
         hint('Web strung — ' + res.span.toFixed(0) + ' m span');
         if (GAME.camFx) GAME.camFx.pulse = Math.max(GAME.camFx.pulse, 0.4);
         if (GAME.audio && GAME.audio.thwip) GAME.audio.thwip();
       }
     } else if (skin === 'upgraded') {
+      // A focus pulse with no cooldown accepted 360 fires in six seconds, which
+      // both latched slow-motion on permanently and minted a fresh sprite per
+      // egg every frame. It's a pulse — it gets to be one.
+      if (A.senseCd > 0) return;
+      A.senseCd = 2.6;
       GAME.slowmo(0.8);
       const n = GAME.specials ? GAME.specials.revealNearby(player.pos) : 0;
       hint('Spider-Sense — ' + n + ' nearby');
@@ -819,18 +840,20 @@
     $('speed').style.opacity = (0.75 * (0.35 + 0.65 * vis)).toFixed(3);
     if (GAME.minimap && GAME.minimap.cv && !GAME.minimap.full)
       GAME.minimap.cv.style.opacity = (0.28 + 0.54 * vis).toFixed(3);
-    // Amazing: show how much web is left, so the charge limit is legible
-    // instead of just silently refusing the key
+    // Show how many charges the current suit has left, so a limit reads as a
+    // limit instead of the key silently doing nothing
     const pips = $('netpips');
     if (pips) {
-      const on = GAME.settings.skin === 'tasm';
-      pips.style.display = on ? 'block' : 'none';
-      if (on && pips._n !== netCharges) {
-        pips._n = netCharges;
+      const skin = GAME.settings.skin;
+      const st = skin === 'tasm' ? { ...GAME.netState(), label: 'WEB' }
+               : skin === 'iron' ? { ...GAME.dashState(), label: 'DASH' } : null;
+      pips.style.display = st ? 'block' : 'none';
+      if (st && (pips._n !== st.charges || pips._l !== st.label)) {
+        pips._n = st.charges; pips._l = st.label;
         let s = '';
-        for (let i = 0; i < NET_MAX_CHARGES; i++)
-          s += '<i class="' + (i < netCharges ? 'on' : '') + '"></i>';
-        pips.innerHTML = s + '<span>WEB</span>';
+        for (let i = 0; i < st.max; i++)
+          s += '<i class="' + (i < st.charges ? 'on' : '') + '"></i>';
+        pips.innerHTML = s + '<span>' + st.label + '</span>';
       }
     }
   }
@@ -872,10 +895,7 @@
         if (GAME.camFx) GAME.camFx.pulse = Math.max(GAME.camFx.pulse, 0.5);
       }
       if (player.mode !== 'air') apexUsed = false;
-      // web-net charges reload on any solid contact
-      netCd = Math.max(0, netCd - rawDt);
-      if (player.mode === 'ground' || player.mode === 'crawl' || player.mode === 'wallrun')
-        netCharges = NET_MAX_CHARGES;
+      // (ability cooldowns + recharge live in Player.update — see this.ability)
       // Blot portals: teleport between the holes in reality
       portalStep(rawDt);
       // comic sound-effect bubbles — Noir suit only

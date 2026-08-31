@@ -187,7 +187,13 @@
         const d = Math.hypot(e.x - pos.x, e.z - pos.z);
         if (d < 500) pts.push(new THREE.Vector3(e.x, (e.y || 40), e.z));
       }
-      for (const rec of this.beacons) this.scene.remove(rec.sp);
+      // dispose, don't just unparent — each pulse minted a fresh SpriteMaterial
+      // per egg and dropped the old one on the floor, so holding the key leaked
+      // a GPU material every frame
+      for (const rec of this.beacons) {
+        this.scene.remove(rec.sp);
+        if (rec.sp.material) rec.sp.material.dispose();
+      }
       this.beacons.length = 0;
       for (const p of pts) {
         const sp = new THREE.Sprite(new THREE.SpriteMaterial({
@@ -248,7 +254,11 @@
       // spider-sense beacons pulse then fade over 6 s
       for (let i = this.beacons.length - 1; i >= 0; i--) {
         const rec = this.beacons[i]; rec.t += dt;
-        if (rec.t > 6) { this.scene.remove(rec.sp); this.beacons.splice(i, 1); continue; }
+        if (rec.t > 6) {
+          this.scene.remove(rec.sp);
+          if (rec.sp.material) rec.sp.material.dispose();
+          this.beacons.splice(i, 1); continue;
+        }
         const pulse = 1 + Math.sin(rec.t * 8) * 0.25;
         rec.sp.scale.setScalar(rec.base * pulse);
         rec.sp.material.opacity = 0.9 * (1 - rec.t / 6);

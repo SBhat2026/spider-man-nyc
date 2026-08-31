@@ -36,8 +36,9 @@
              'ride them: in spider-stance they plant on the ground (or the ' +
              'facade you\'re crawling) and carry you at a walk no human legs manage.',
       keys: [['G', 'waldo dash — lunge forward and grip, cracking whatever you land on'],
+             ['—', 'two dashes in the air; they reset when you touch down'],
              ['hold K', 'spider-stance — rise up and walk on the waldoes, ~45% faster']],
-      menu: '<b>Waldo dash (G)</b> — four mechanical legs lunge you forward and crack the concrete. <b>Hold K</b> to rise into spider-stance and walk on them.',
+      menu: '<b>Waldo dash (G)</b> — four mechanical legs lunge you forward and crack the concrete. Two dashes per trip through the air. <b>Hold K</b> to rise into spider-stance and walk on them.',
     },
     miles: {
       tag: 'Miles Morales · Spider-Verse',
@@ -68,7 +69,8 @@
       tag: 'Tom Holland · Far From Home',
       power: '<b>Spider-Sense pulse</b> — a beat of slow motion that lights up ' +
              'every nearby easter egg straight through the buildings.',
-      keys: [['G', 'focus pulse — slow-mo + reveal what\'s hidden nearby']],
+      keys: [['G', 'focus pulse — slow-mo + reveal what\'s hidden nearby'],
+             ['—', 'recharges over about two and a half seconds']],
       menu: '<b>Spider-Sense (G)</b> — a focus pulse: brief slow-mo that reveals nearby easter eggs through the walls.',
     },
     noir: {
