@@ -8,27 +8,129 @@
   const TexCache = {};
   function facadeTextures(kind) {
     if (TexCache[kind]) return TexCache[kind];
-    const N = 512;
+    // 1024 with an 8x8 bay grid (was 512 / 4x4): the tile covers twice the
+    // wall before it repeats, which is what kills the obvious grid-wallpaper
+    // look on long facades. TILE below is doubled to match, so a window is
+    // still ~2 m across.
+    const N = 1024, G = 8, C = N / G;
     const day = document.createElement('canvas'); day.width = day.height = N;
     const emi = document.createElement('canvas'); emi.width = emi.height = N;
-    const d = day.getContext('2d'), e = emi.getContext('2d');
+    // ORM: green = roughness, blue = metalness (three.js reads those channels)
+    const orm = document.createElement('canvas'); orm.width = orm.height = N;
+    const d = day.getContext('2d'), e = emi.getContext('2d'), o = orm.getContext('2d');
     let seed = kind === 'brick' ? 11 : kind === 'stone' ? 29 : kind === 'blank' ? 61 : 47;
     const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
     e.fillStyle = '#000'; e.fillRect(0, 0, N, N);
+    const setORM = (x, y, w, h, rough, metal) => {
+      o.fillStyle = 'rgb(0,' + Math.round(rough * 255) + ',' + Math.round(metal * 255) + ')';
+      o.fillRect(x, y, w, h);
+    };
+    setORM(0, 0, N, N, 0.94, 0);          // masonry default: matte, dielectric
 
-    // dense lit ratio — at sunset the whole city glows like the reference
-    const litWindow = (x, y, w, h) => {
-      const r = rnd();
-      if (r < 0.40) e.fillStyle = '#f5ae5e';
-      else if (r < 0.58) e.fillStyle = '#8a5730';
-      else return;
+    // Offices light up in CLUSTERS — a whole floor, or a stack of one tenant's
+    // bays — never as uniform salt-and-pepper. Precompute which cells are lit.
+    const lit = [];
+    for (let j = 0; j < G; j++) {
+      const floorLit = rnd();
+      for (let i = 0; i < G; i++) {
+        const bayLit = rnd();
+        // a lit floor makes its whole row likely; some vertical stacks too
+        let p = 0.05;
+        if (floorLit < 0.16) p = 0.34;        // a few fully-occupied floors
+        else if (floorLit < 0.40) p = 0.15;
+        if (bayLit < 0.07) p = Math.max(p, 0.30);
+        lit.push(rnd() < p ? (rnd() < 0.55 ? 2 : 1) : 0);   // 2 = warm, 1 = dim
+      }
+    }
+    const litWindow = (i, j, x, y, w, h) => {
+      const v = lit[j * G + i];
+      if (!v) return;
+      e.fillStyle = v === 2 ? '#c98c4e' : '#5a3d26';
       e.fillRect(x, y, w, h);
+      // blinds / occupant silhouettes break the flat glow
+      if (v === 2 && rnd() < 0.5) {
+        e.fillStyle = 'rgba(0,0,0,0.45)';
+        const bh = h * (0.2 + rnd() * 0.4);
+        e.fillRect(x, y, w, bh);
+      }
+    };
+    // soft vertical grime, strongest under sills and at the base
+    const grime = () => {
+      for (let i = 0; i < 26; i++) {
+        const x = rnd() * N, w = 3 + rnd() * 16;
+        const g = d.createLinearGradient(x, 0, x, N);
+        g.addColorStop(0, 'rgba(38,32,26,' + (0.06 + rnd() * 0.16).toFixed(3) + ')');
+        g.addColorStop(1, 'rgba(38,32,26,0)');
+        d.fillStyle = g; d.fillRect(x, 0, w, N);
+      }
+      const base = d.createLinearGradient(0, N, 0, N * 0.72);
+      base.addColorStop(0, 'rgba(26,22,18,0.34)');
+      base.addColorStop(1, 'rgba(26,22,18,0)');
+      d.fillStyle = base; d.fillRect(0, N * 0.72, N, N * 0.28);
+    };
+    // inset shadow so a window reads as a hole, not a sticker
+    const recess = (x, y, w, h) => {
+      d.fillStyle = 'rgba(0,0,0,0.34)'; d.fillRect(x - 3, y - 3, w + 6, 4);
+      d.fillStyle = 'rgba(0,0,0,0.20)'; d.fillRect(x - 3, y - 3, 4, h + 6);
+      d.fillStyle = 'rgba(255,255,255,0.10)'; d.fillRect(x - 2, y + h, w + 4, 3);
+    };
+    // glazing: dark pane + sky gradient + smooth roughness
+    const pane = (x, y, w, h, tone) => {
+      const v = 0.82 + rnd() * 0.3;
+      d.fillStyle = 'rgb(' + (tone[0] * v | 0) + ',' + (tone[1] * v | 0) + ',' + (tone[2] * v | 0) + ')';
+      d.fillRect(x, y, w, h);
+      const g = d.createLinearGradient(x, y, x, y + h);
+      g.addColorStop(0, 'rgba(198,220,244,0.52)');
+      g.addColorStop(0.45, 'rgba(132,162,196,0.30)');
+      g.addColorStop(1, 'rgba(30,44,64,0.22)');
+      d.fillStyle = g; d.fillRect(x, y, w, h);
+      setORM(x, y, w, h, 0.13, 0.55);     // smooth + semi-metal → takes the env probe
     };
 
     if (kind === 'brick') {
-      // grayscale masonry (vertex tint supplies brick hue), 4x4 windows/tile
-      d.fillStyle = '#d8d2c8'; d.fillRect(0, 0, N, N);
-      d.strokeStyle = 'rgba(120,110,100,0.35)'; d.lineWidth = 1;
+      d.fillStyle = '#b3a897'; d.fillRect(0, 0, N, N);
+      d.strokeStyle = 'rgba(70,60,52,0.30)'; d.lineWidth = 1;
+      for (let y = 0; y < N; y += 9) {
+        d.beginPath(); d.moveTo(0, y); d.lineTo(N, y); d.stroke();
+        const off = (y / 9) % 2 ? 13 : 0;
+        for (let x = off; x < N; x += 26) {
+          d.beginPath(); d.moveTo(x, y); d.lineTo(x, y + 9); d.stroke();
+        }
+      }
+      for (let i = 0; i < G; i++) for (let j = 0; j < G; j++) {
+        const x = i * C + 26, y = j * C + 20, w = C - 52, h = C - 44;
+        d.fillStyle = '#b4aa9c'; d.fillRect(x - 6, y + h, w + 12, 7);      // sill
+        d.fillStyle = '#8d8478'; d.fillRect(x - 5, y - 8, w + 10, 8);      // lintel
+        recess(x, y, w, h);
+        pane(x, y, w, h, [74, 88, 104]);
+        d.fillStyle = 'rgba(46,44,40,0.72)';
+        d.fillRect(x + w / 2 - 2, y, 3, h); d.fillRect(x, y + h / 2 - 2, w, 3);
+        setORM(x + w / 2 - 2, y, 3, h, 0.8, 0);
+        litWindow(i, j, x, y, w, h);
+      }
+      grime();
+    } else if (kind === 'stone') {
+      d.fillStyle = '#c2bcac'; d.fillRect(0, 0, N, N);
+      d.strokeStyle = 'rgba(66,62,54,0.22)'; d.lineWidth = 1.5;
+      for (let y = 0; y < N; y += C / 2) { d.beginPath(); d.moveTo(0, y); d.lineTo(N, y); d.stroke(); }
+      for (let j = 0; j < G; j++) {
+        d.fillStyle = 'rgba(56,52,45,0.34)';
+        d.fillRect(0, j * C + C - 13, N, 7);                               // spandrel band
+      }
+      for (let i = 0; i < G; i++) for (let j = 0; j < G; j++) {
+        for (const k of [0, 1]) {
+          const w = C / 2 - 20, h = C - 40;
+          const x = i * C + 9 + k * (C / 2 + 2), y = j * C + 18;
+          recess(x, y, w, h);
+          pane(x, y, w, h, [70, 85, 102]);
+          d.fillStyle = 'rgba(46,44,40,0.72)'; d.fillRect(x, y + h / 2 - 2, w, 3);
+          litWindow(i, j, x, y, w, h);
+        }
+      }
+      grime();
+    } else if (kind === 'blank') {
+      d.fillStyle = '#ab9a89'; d.fillRect(0, 0, N, N);
+      d.strokeStyle = 'rgba(74,62,54,0.42)'; d.lineWidth = 1;
       for (let y = 0; y < N; y += 8) {
         d.beginPath(); d.moveTo(0, y); d.lineTo(N, y); d.stroke();
         const off = (y / 8) % 2 ? 12 : 0;
@@ -36,98 +138,42 @@
           d.beginPath(); d.moveTo(x, y); d.lineTo(x, y + 8); d.stroke();
         }
       }
-      const C = N / 4;
-      for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
-        const x = i * C + 30, y = j * C + 22, w = C - 60, h = C - 48;
-        d.fillStyle = '#efe9dd'; d.fillRect(x - 6, y + h, w + 12, 8);       // sill
-        d.fillStyle = '#c9c2b4'; d.fillRect(x - 4, y - 8, w + 8, 8);        // lintel
-        const v = 0.8 + rnd() * 0.3;
-        d.fillStyle = `rgb(${58 * v | 0},${70 * v | 0},${84 * v | 0})`;
-        d.fillRect(x, y, w, h);
-        d.fillStyle = 'rgba(230,240,250,0.18)';
-        d.fillRect(x, y, w, h * 0.35);
-        d.fillStyle = '#3a352e';
-        d.fillRect(x + w / 2 - 2, y, 4, h); d.fillRect(x, y + h / 2 - 2, w, 4);
-        litWindow(x, y, w, h);
-      }
-    } else if (kind === 'stone') {
-      // limestone: smooth blocks, tall paired windows, floor band
-      d.fillStyle = '#ddd8cc'; d.fillRect(0, 0, N, N);
-      d.strokeStyle = 'rgba(110,105,95,0.25)'; d.lineWidth = 1.5;
-      for (let y = 0; y < N; y += 32) { d.beginPath(); d.moveTo(0, y); d.lineTo(N, y); d.stroke(); }
-      const C = N / 4;
-      for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
-        d.fillStyle = 'rgba(90,85,75,0.30)';
-        d.fillRect(0, j * C + C - 12, N, 6);                                 // spandrel band
-        for (const k of [0, 1]) {
-          const w = C / 2 - 42, h = C - 44;
-          const x = i * C + 16 + k * (C / 2 + 4), y = j * C + 20;
-          const v = 0.8 + rnd() * 0.3;
-          d.fillStyle = `rgb(${52 * v | 0},${64 * v | 0},${80 * v | 0})`;
-          d.fillRect(x, y, w, h);
-          d.fillStyle = 'rgba(235,242,250,0.20)'; d.fillRect(x, y, w, h * 0.3);
-          d.fillStyle = '#39342d'; d.fillRect(x, y + h / 2 - 2, w, 4);
-          litWindow(x, y, w, h);
-        }
-      }
-    } else if (kind === 'blank') {
-      // party wall / blank side: raw brick, no window grid — just water
-      // stains, ghost-ad blotches and a couple of stray windows. Breaks up
-      // the endless glass/grid repetition the way real NYC side walls do.
-      d.fillStyle = '#cdbfb0'; d.fillRect(0, 0, N, N);
-      d.strokeStyle = 'rgba(120,104,92,0.4)'; d.lineWidth = 1;
-      for (let y = 0; y < N; y += 7) {                 // brick courses
-        d.beginPath(); d.moveTo(0, y); d.lineTo(N, y); d.stroke();
-        const off = (y / 7) % 2 ? 11 : 0;
-        for (let x = off; x < N; x += 22) {
-          d.beginPath(); d.moveTo(x, y); d.lineTo(x, y + 7); d.stroke();
-        }
-      }
-      // ghost painted-ad rectangle
-      d.fillStyle = 'rgba(150,120,100,0.18)';
-      d.fillRect(N * 0.18, N * 0.2, N * 0.5, N * 0.34);
-      // long vertical water stains under the parapet
+      d.fillStyle = 'rgba(120,96,78,0.20)';
+      d.fillRect(N * 0.18, N * 0.2, N * 0.5, N * 0.34);                    // ghost ad
       for (let i = 0; i < 7; i++) {
-        const x = 20 + (i * 71) % (N - 40);
-        const g = d.createLinearGradient(x, 0, x, N);
-        g.addColorStop(0, 'rgba(70,60,50,0.28)'); g.addColorStop(1, 'rgba(70,60,50,0)');
-        d.fillStyle = g; d.fillRect(x, 0, 5 + rnd() * 5, N);
+        const x = 40 + ((i * 142) % (N - 80));
+        d.fillStyle = 'rgba(26,24,20,0.95)'; d.fillRect(x, 80 + ((i * 271) % (N - 240)), 50, 66);
       }
-      // a few stray windows + one AC unit
-      for (let i = 0; i < 5; i++) {
-        const x = 30 + ((i * 97) % (N - 90)), y = 40 + ((i * 137) % (N - 120));
-        d.fillStyle = '#3a352e'; d.fillRect(x, y, 26, 34);
-        d.fillStyle = '#8a836f'; d.fillRect(x - 3, y + 34, 32, 5);   // sill
-        litWindow(x, y, 26, 34);
-      }
-      d.fillStyle = '#4a4640'; d.fillRect(N * 0.62, N * 0.66, 40, 26); // AC unit
+      d.fillStyle = '#423e38'; d.fillRect(N * 0.62, N * 0.66, 78, 50);     // AC unit
+      grime();
     } else {
-      // glass curtain wall: full panes, mullions, sky reflection gradient
-      const C = N / 4;
-      for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
+      // glass curtain wall — real towers read DARK and get their brightness
+      // from what they reflect, which is why this one leans on the env probe
+      for (let i = 0; i < G; i++) for (let j = 0; j < G; j++) {
         const x = i * C, y = j * C;
-        const v = 0.86 + rnd() * 0.26;
-        d.fillStyle = `rgb(${96 * v | 0},${118 * v | 0},${138 * v | 0})`;
-        d.fillRect(x, y, C, C);
-        const g = d.createLinearGradient(x, y, x, y + C);
-        g.addColorStop(0, 'rgba(255,255,255,0.34)');
-        g.addColorStop(0.5, 'rgba(255,255,255,0.05)');
-        g.addColorStop(1, 'rgba(15,25,38,0.30)');
-        d.fillStyle = g; d.fillRect(x, y, C, C);
-        d.fillStyle = 'rgba(30,34,40,0.9)';
-        d.fillRect(x, y + C - 5, C, 5); d.fillRect(x + C - 4, y, 4, C);
-        d.fillRect(x + C / 2 - 2, y, 4, C);
-        litWindow(x + 4, y + 4, C - 12, C - 12);
+        pane(x + 2, y + 2, C - 4, C - 4, [62, 84, 104]);
+        d.fillStyle = 'rgba(40,46,54,0.80)';                                // mullions
+        d.fillRect(x, y + C - 4, C, 4); d.fillRect(x + C - 3, y, 3, C);
+        setORM(x, y + C - 4, C, 4, 0.55, 0.85);
+        setORM(x + C - 3, y, 3, C, 0.55, 0.85);
+        litWindow(i, j, x + 5, y + 5, C - 12, C - 12);
+      }
+      // spandrel bands every few floors read as structure, not wallpaper
+      for (let j = 0; j < G; j += 3) {
+        d.fillStyle = 'rgba(18,22,28,0.55)'; d.fillRect(0, j * C, N, 7);
+        setORM(0, j * C, N, 7, 0.7, 0.3);
       }
     }
+
     const mk = (cv, srgb) => {
       const t = new THREE.CanvasTexture(cv);
       t.wrapS = t.wrapT = THREE.RepeatWrapping;
-      t.anisotropy = 8;
+      t.anisotropy = 16;
       if (srgb) t.encoding = THREE.sRGBEncoding;
       return t;
     };
-    return TexCache[kind] = { map: mk(day, true), emissiveMap: mk(emi, false) };
+    return TexCache[kind] = { map: mk(day, true), emissiveMap: mk(emi, false),
+                              ormMap: mk(orm, false) };
   }
 
   function roofTextures() {
@@ -340,7 +386,8 @@
         return c;
       };
       // meters per texture tile (4 windows / 4 floors per tile)
-      const TILE = { brick: [8, 11], stone: [10, 12.5], glass: [6, 13], blank: [9, 9] };
+      // doubled for the 8x8 bay grid in facadeTextures — a window stays ~2 m
+      const TILE = { brick: [16, 22], stone: [20, 25], glass: [12, 26], blank: [18, 18] };
 
       for (const b of this.buildings) {
         const { poly, h, fam, hash } = b;
@@ -384,7 +431,9 @@
           for (let k = 0; k < 4; k++) g.nrm.push(nx, 0, nz);
           g.uv.push(cum / tu, vPhase, (cum + len) / tu, vPhase,
                     (cum + len) / tu, h / tv + vPhase, cum / tu, h / tv + vPhase);
-          const cL = tint.clone().multiplyScalar(0.42);
+          // 0.42 used to be the only base shading; facadeTextures now bakes its
+          // own grime gradient, so this only needs to finish the job
+          const cL = tint.clone().multiplyScalar(0.68);
           const cT = tint.clone().multiplyScalar(topShade);
           g.col.push(cL.r, cL.g, cL.b, cL.r, cL.g, cL.b,
                      cT.r, cT.g, cT.b, cT.r, cT.g, cT.b);
@@ -432,20 +481,28 @@
       const famMat = {};
       for (const fam of ['brick', 'stone', 'glass', 'blank']) {
         const tex = facadeTextures(fam);
-        const mat = new THREE.MeshLambertMaterial({
+        // Standard (not Lambert) so facades take the scene's reflection probe:
+        // glass towers get their brightness from what they REFLECT, which is
+        // the single biggest step toward looking like real NYC glass.
+        const mat = new THREE.MeshStandardMaterial({
           map: tex.map, emissiveMap: tex.emissiveMap,
           emissive: new THREE.Color(0xffa953), emissiveIntensity: 0,
+          roughnessMap: tex.ormMap, metalnessMap: tex.ormMap,
+          roughness: 1, metalness: 1,        // scaled BY the map channels
           vertexColors: true,
         });
+        mat.envMapIntensity = fam === 'glass' ? 1.15 : 0.35;
         this.wallMats.push(mat);
         famMat[fam] = mat;
       }
       const rtex = roofTextures();
-      const roofMat = new THREE.MeshLambertMaterial({
+      const roofMat = new THREE.MeshStandardMaterial({
         map: rtex.map, emissiveMap: rtex.emissiveMap,
         emissive: new THREE.Color(0xffa953), emissiveIntensity: 0,
+        roughness: 0.92, metalness: 0.04,
         vertexColors: true, side: THREE.DoubleSide,
       });
+      roofMat.envMapIntensity = 0.25;
       this.wallMats.push(roofMat);
 
       const mkMesh = (g, mat, uv) => {
