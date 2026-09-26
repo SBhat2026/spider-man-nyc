@@ -172,6 +172,7 @@
   // ---- texture atlas of ads: one shared texture -> one draw call for a
   // whole wall of billboards, instead of a mesh+material per board ----
   function makeAdAtlas(rnd, portrait) {
+    if (GAME.desktopAdAtlas) return GAME.desktopAdAtlas(portrait);
     const cols = portrait ? 8 : 4, rows = portrait ? 4 : 8;
     const cw = portrait ? 256 : 512, ch = portrait ? 512 : 256;
     const cv = document.createElement('canvas');
@@ -591,7 +592,7 @@
           // stack boards up the facade (collected, then batched into ONE mesh)
           let y = 5.5 + rnd() * 2;
           const yMax = Math.min(b.h - 2, d < 90 ? Math.max(60, b.h * 0.55) : 40);
-          while (y < yMax && placed < 380) {
+          while (y < yMax && placed < (GAME.desktop ? 560 : 380)) {
             const bh = 5.5 + rnd() * 7.5;
             if (y + bh / 2 > yMax) break;
             const bw = Math.min(len * (0.62 + rnd() * 0.26), 26);
@@ -605,7 +606,7 @@
           }
 
           // mega vertical board on tall close towers
-          if (megas < 10 && b.h > 48 && d < 110 && len > 12) {
+          if (megas < (GAME.desktop ? 18 : 10) && b.h > 48 && d < 110 && len > 12) {
             const mw = Math.min(16, len * 0.55);
             const mh = Math.min(b.h * 0.62, 58);
             boardsP.push({ x: f.mx + f.nx * 0.6, y: b.h * 0.55, z: f.mz + f.nz * 0.6,
@@ -660,9 +661,9 @@
       const stepMat = new THREE.MeshLambertMaterial({
         color: 0xc81f2e, emissive: 0x8a0e1c, emissiveIntensity: 0.9,
         transparent: true, opacity: 0.92 });
-      for (let i = 0; i < 12; i++) {
-        const st = new THREE.Mesh(new THREE.BoxGeometry(10.4, 0.34, 1.1), stepMat);
-        st.position.set(0, 0.34 * i + 0.17, -1.05 * i);
+      for (let i = 0; i < (GAME.desktop ? 27 : 12); i++) {
+        const st = new THREE.Mesh(new THREE.BoxGeometry(10.4, GAME.desktop ? 0.18 : 0.34, GAME.desktop ? 0.62 : 1.1), stepMat);
+        st.position.set(0, (GAME.desktop ? 0.18 : 0.34) * i + 0.17, -(GAME.desktop ? 0.6 : 1.05) * i);
         stairs.add(st);
       }
       // LED riser wall under the stair front, facing down the bowtie
@@ -672,11 +673,13 @@
           scanlines(c, w, h);
           c.fillStyle = '#ffffff'; c.textAlign = 'center'; c.textBaseline = 'middle';
           c.font = '900 120px Helvetica, Arial, sans-serif';
-          c.fillText('TIX', w / 2, h / 2);
+          c.fillText(GAME.desktop ? 'tkts' : 'TIX', w / 2, h / 2);
         }) }));
       riser.position.set(0, 1.7, 0.56);
       stairs.add(riser);
-      stairs.position.set(ctr.x, 0.02, ctr.z);
+      const stepCenter = GAME.desktop ? this.ll(40.75912, -73.98450) : ctr;
+      stairs.position.set(stepCenter.x, 0.02, stepCenter.z);
+      if (GAME.desktop) stairs.rotation.y = -0.49;
       this.group.add(stairs);
 
       // ---- neon ground bounce: flat additive pools of colour on the street,
@@ -2040,7 +2043,7 @@
         g.opacity = 0.04 + 0.24 * nightK;
       // additive 340m sprite — anything past ~0.35 washes out the whole view
       // when you stand inside the square
-      if (this.tsHaze) this.tsHaze.opacity = 0.14 + 0.2 * nightK;
+      if (this.tsHaze) this.tsHaze.opacity = GAME.desktop ? 0.035 + 0.05 * nightK : 0.14 + 0.2 * nightK;
       // billboard shimmer
       this._flickT = (this._flickT || 0) + dt;
       if (this._flickT > 0.12) {

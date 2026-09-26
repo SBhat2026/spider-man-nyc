@@ -42,6 +42,7 @@
       this.mode = 'ground';
       this.anchor = null;
       this.wall = null;
+      if (GAME.desktop && GAME.combat) GAME.combat.resetHealth();
     }
 
     setCity(city) {
@@ -551,6 +552,7 @@
       // drive hero visuals
       this.hero.update({
         mode: this.mode, pos: this.pos, vel: this.vel, hanging: this.hanging,
+        combat: GAME.desktop ? this.combatPose : null,
         diving: this.diving,
         lookPitch: this.lookPitch, lookYawRel: this.lookYawRel,
         speed: this.mode === 'crawl' ? this.vel.length()

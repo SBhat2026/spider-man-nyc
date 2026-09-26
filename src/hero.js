@@ -287,6 +287,10 @@
     { name: 'kneeL',     parent: 'hipL',      head: [-0.10, -0.50, 0], tail: [-0.10, -0.97, 0] },
   ];
 
+  if (GAME.desktop) for (const bone of BONE_DEFS) {
+    if (/shoulder|elbow/.test(bone.name)) { bone.head[0] *= .215 / .245; bone.tail[0] *= .215 / .245; }
+  }
+
   function segDist(px, py, pz, a, b) {
     const abx = b[0] - a[0], aby = b[1] - a[1], abz = b[2] - a[2];
     const L2 = abx * abx + aby * aby + abz * abz || 1e-9;
@@ -391,6 +395,7 @@
   // suit regions — cross-section boundaries meet exactly so color blocks are
   // continuous, like the panel seams on the real suit
   function buildParts() {
+    if (GAME.buildDesktopParts) return GAME.buildDesktopParts();
     const P = [];
     // lock = single bone (name); chain = restrict weighting to these bones only
     const add = (geo, slot, lock, chain) => P.push({ geo, slot, lock, chain });
@@ -476,7 +481,7 @@
 
   function buildSkinnedGeometries(boneIndex) {
     const buckets = {};
-    for (const k of ['torso', 'primary', 'secondary', 'accent', 'lens', 'rim'])
+    for (const k of (GAME.desktop ? ['torso', 'primary', 'secondary', 'accent', 'lens', 'rim', 'mask', 'sleeves'] : ['torso', 'primary', 'secondary', 'accent', 'lens', 'rim']))
       buckets[k] = { pos: [], nrm: [], uv: [], si: [], sw: [], idx: [] };
 
     for (const part of buildParts()) {
@@ -841,6 +846,7 @@
           color: new THREE.Color(def.rim).convertSRGBToLinear(),
           roughness: 0.5, metalness: 0.2 }),
       };
+      if (GAME.desktop) { mats.mask = skinMaterial(def.primary); mats.sleeves = skinMaterial(def.primary); }
       if (this.fedora) this.fedora.visible = !!def.fedora;
       if (this.waldos) this.waldos.visible = (name === 'iron');
       for (const slot in this.slots)

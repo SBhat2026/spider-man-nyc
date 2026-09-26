@@ -15,8 +15,11 @@
   renderer.shadowMap.type = isMobile ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
   renderer.outputEncoding = THREE.sRGBEncoding;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.16;
+  renderer.toneMappingExposure = GAME.desktop ? 1.0 : 1.16;
   $('game').appendChild(renderer.domElement);
+  const presentation = GAME.DesktopRender ? new GAME.DesktopRender(renderer) : null;
+  GAME.presentation = presentation;
+  const renderFrame = () => presentation ? presentation.render(scene, camera) : renderer.render(scene, camera);
 
   const scene = new THREE.Scene();
   // FOV adapts to the viewport shape so portrait phones don't get tunnel
@@ -29,6 +32,7 @@
   const rig = new GAME.LightingRig(scene);
   rig.sun.shadow.mapSize.set(GAME.GFX.shadowMap, GAME.GFX.shadowMap);
   rig.sun.shadow.radius = GAME.GFX.shadowRadius;
+  if (GAME.desktop) { const c=rig.sun.shadow.camera; c.left=c.bottom=-95; c.right=c.top=95; c.updateProjectionMatrix(); rig.sun.shadow.normalBias=.13; }
 
   // Reflection probe (metallic skins pick up sky + city).
   // Rendering all 6 cube faces at once made every 24th frame do 7x the work —
@@ -50,7 +54,10 @@
     // once per cycle, on the final face
     rt.texture.generateMipmaps = (envFace === 5);
     gl.setRenderTarget(rt, envFace);
+    const env = scene.environment;
+    if (GAME.desktop) scene.environment = null;
     gl.render(scene, cam);
+    scene.environment = env;
     gl.setRenderTarget(prevRT);
     envFace = (envFace + 1) % 6;
   }
@@ -76,6 +83,8 @@
 
   let city = null, traffic = null, pigeons = null, player = null;
   function setZone(key) {
+    if (GAME.combat) { GAME.combat.dispose(); GAME.combat = null; }
+    if (GAME.desktopWorld) { GAME.desktopWorld.dispose(); GAME.desktopWorld = null; }
     if (city) {
       scene.remove(city.group);
       if (traffic) { scene.remove(traffic.group); traffic.dispose(); }
@@ -92,6 +101,8 @@
     scene.add(pigeons.group);
     if (GAME.landmarks) GAME.landmarks.dispose();
     GAME.landmarks = new GAME.Landmarks(city, scene);
+    if (GAME.DesktopWorld) GAME.desktopWorld = new GAME.DesktopWorld(city, scene, GAME.landmarks);
+    if (GAME.Combat) GAME.combat = new GAME.Combat(city, scene, GAME.landmarks);
     if (GAME.minimap) GAME.minimap.dispose();
     GAME.minimap = new GAME.Minimap(city);
     if (GAME.crowds) { scene.remove(GAME.crowds.group); GAME.crowds.dispose(); }
@@ -113,14 +124,14 @@
     $('zonename').textContent = city.zone.name;
     GAME.debug = { scene, city, traffic, pigeons, rig, hero, camera, renderer,
                    step: (dt) => {           // manual frame step (testing/headless)
-                     if (photo.on) { updatePhotoCam(dt); renderer.render(scene, camera); return; }
+                     if (photo.on) { updatePhotoCam(dt); renderFrame(); return; }
                      camera.getWorldDirection(camDir);
                      if (player) player.update(dt, camera, camDir);
                      rig.update(dt, player.pos, camera.position);
                      traffic.update(dt, rig);
                      pigeons.update(dt);
                      updateCamera(dt);
-                     renderer.render(scene, camera);
+                     renderFrame();
                    },
                    setCam: (yaw, pitch) => { camYaw = yaw; if (pitch !== undefined) camPitch = pitch; } };
   }
@@ -154,6 +165,13 @@
                    ArrowUp: 'w', ArrowDown: 's', ArrowLeft: 'a', ArrowRight: 'd' };
   window.addEventListener('keydown', (e) => {
     if (!playing) return;
+    if (GAME.desktop && e.code === 'Escape') { GAME.pause(); return; }
+    if (GAME.desktop && e.code === 'Comma' && GAME.audio?.nextTrack) { GAME.audio.nextTrack(); return; }
+    if (GAME.combat && GAME.combatEnabled && !photo.on) {
+      const action = { KeyJ:'strike', KeyL:'web', KeyH:'dodge', KeyU:'parry', KeyV:'power', KeyO:'finisher' }[e.code];
+      if (action) { e.preventDefault(); if (!e.repeat) GAME.combat.input(action, player, camera); return; }
+      if (e.code === 'KeyI') { if (!e.repeat) { GAME.combat.travel(player); started = false; } return; }
+    }
     const k = KEYMAP[e.code];
     if (k) { keys[k] = 1; e.preventDefault(); }
     // Photo mode freezes the world and flies the camera — WASD/SPACE/C drive
@@ -197,6 +215,7 @@
       else if (!GAME.daily.start()) hint('No route available here');
     }
   });
+  window.addEventListener('blur', () => { if (GAME.desktop) { for (const k in keys) keys[k] = 0; mouseDrag = false; if (playing) GAME.pause(); } });
   window.addEventListener('keyup', (e) => {
     const k = KEYMAP[e.code];
     if (k) keys[k] = 0;
@@ -252,6 +271,7 @@
       photo.pitch = Math.asin(Math.max(-1, Math.min(1, d.y)));
     }
     $('hud').style.display = photo.on ? 'none' : 'block';
+    if (GAME.desktop) document.getElementById('patrol-hud').hidden=photo.on;
     $('photolabel').style.display = photo.on ? 'block' : 'none';
     if (photo.on && GAME.photos) {
       const el = $('phototask');
@@ -275,6 +295,16 @@
     camera.fov += ((GAME.baseFov ? GAME.baseFov() : GAME.CAM.fov) - camera.fov) * Math.min(1, dt * 5);
     camera.updateProjectionMatrix();
   }
+  GAME.pause = function () {
+    if (!GAME.desktop || !playing) return;
+    playing = false; document.exitPointerLock?.(); $('menu').style.display='flex';
+    for (const k in keys) keys[k]=0;
+    if (GAME.minimap) GAME.minimap.cv.style.display=GAME.minimap.cp.style.display='none';
+    if (GAME.suitHelp) GAME.suitHelp.setPlaying(false);
+    if (GAME.suitPreview) { GAME.suitPreview.resize(); GAME.suitPreview.start(); }
+    if (GAME.updateDesktopUI) GAME.updateDesktopUI(1,false);
+    $('startBtn').textContent='Resume patrol';
+  };
   let hadLock = false;
   document.addEventListener('pointerlockchange', () => {
     const locked = document.pointerLockElement === renderer.domElement;
@@ -577,7 +607,7 @@
     // camera breathes: pulls back with speed for wide framing, scaled by the
     // player's scroll-wheel zoom
     const speedK0 = Math.min(1, player.vel.length() / GAME.PHYS.termVel);
-    const wantDist = (C.dist + C.distSpeedBoost * speedK0) * camZoom;
+    const wantDist = (C.dist + C.distSpeedBoost * speedK0 + (GAME.combat?.engaged && GAME.combatEnabled ? 2.2 : 0)) * camZoom;
     camDist += (wantDist - camDist) * Math.min(1, dt * 2.5);
 
     let desired = new THREE.Vector3().copy(camTarget).addScaledVector(camDir, camDist);
@@ -642,7 +672,7 @@
       const wantRoll = (player.mode === 'ground') ? 0
         : Math.max(-C.rollMax, Math.min(C.rollMax, -latA * 0.006));
       camRoll += (wantRoll - camRoll) * Math.min(1, dt * 3.5);
-      camera.rotateZ(camRoll);
+      camera.rotateZ(GAME.reducedMotion ? 0 : camRoll);
     }
     prevVel.copy(player.vel);
 
@@ -652,13 +682,13 @@
     fx.pulse = Math.max(0, fx.pulse - dt * 2.4);
     fx.shake = Math.max(0, fx.shake - dt * 3.2);
     const speedK = Math.min(1, player.vel.length() / GAME.PHYS.termVel);
-    if (speedK > 0.25 && player.mode !== 'ground') {
+    if (speedK > 0.25 && player.mode !== 'ground' && !GAME.reducedMotion) {
       const tnow = perf();
       const sway = (speedK - 0.25) * 0.09;
       camera.position.x += Math.sin(tnow * 1.9) * sway;
       camera.position.y += Math.sin(tnow * 2.7 + 1.3) * sway * 0.6;
     }
-    if (fx.shake > 0.01) {
+    if (fx.shake > 0.01 && !GAME.reducedMotion) {
       camera.position.x += (Math.random() - 0.5) * 0.22 * fx.shake;
       camera.position.y += (Math.random() - 0.5) * 0.18 * fx.shake;
     }
@@ -676,6 +706,7 @@
     if (GAME.baseFov) camera.fov = GAME.baseFov();
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+    if (presentation) presentation.resize();
   }
   window.addEventListener('resize', onResize);
   // iOS fires orientationchange before the new dimensions settle
@@ -871,14 +902,14 @@
     GAME.frameCount = frame;
 
     if (GAME.debug && GAME.debug.paused) {   // debug freeze: inspect exact poses
-      renderer.render(scene, camera);
+      renderFrame();
       return;
     }
 
     if (photo.on) {
       // world is frozen — only the free camera moves
       updatePhotoCam(dt);
-      renderer.render(scene, camera);
+      renderFrame();
       return;
     }
 
@@ -887,6 +918,8 @@
       Object.assign(player.keys, keys);
       camera.getWorldDirection(camDir);
       const wasSwing = player.mode === 'swing';
+      if (GAME.combat && GAME.combatEnabled) GAME.combat.update(dt, player, camera);
+      else player.combatPose=null;
       player.update(dt, camera, camDir);
       // 2099: automatic bullet-time at the apex of a real jump/launch
       if (GAME.settings.skin === 'y2099' && player.mode === 'air' && !apexUsed &&
@@ -947,7 +980,7 @@
 
     rig.update(dt, player.pos, camera.position);
     // window glow follows the sunset amount
-    for (const m of city.wallMats) m.emissiveIntensity = rig.windowGlow * 0.95;
+    for (const m of city.wallMats) m.emissiveIntensity = m.userData.noGlow ? 0 : rig.windowGlow * 0.95;
     if (city.lampHeadMat) {   // street lamps warm up with the sunset
       const lk = 0.16 + 0.84 * Math.min(1, rig.windowGlow);
       city.lampHeadMat.color.setRGB(lk, lk * 0.86, lk * 0.62);
@@ -959,6 +992,8 @@
     traffic.update(dt, rig);
     pigeons.update(dt);
     if (GAME.landmarks) GAME.landmarks.update(dt, rig);
+    if (GAME.desktopWorld) GAME.desktopWorld.update(dt,player,rig);
+    if (GAME.updateDesktopUI) GAME.updateDesktopUI(rawDt,playing);
     if (GAME.comicFX) GAME.comicFX.update(rawDt);
     if (GAME.specials) GAME.specials.update(rawDt, playing ? player : null);
     if (GAME.touch) GAME.touch.update(rawDt);
@@ -1015,9 +1050,9 @@
     // for a once-a-second console readout ----
     const info = renderer.info;
     GAME.perf = GAME.perf || { fps: 0, calls: 0, tris: 0, _n: 0, _t: 0 };
-    GAME.perf._n++; GAME.perf._t += dt;
-    GAME.perf.calls = info.render.calls;
-    GAME.perf.tris = info.render.triangles;
+    GAME.perf._n++; GAME.perf._t += rawDt;
+    GAME.perf.calls = GAME.sceneCost ? GAME.sceneCost.calls : info.render.calls;
+    GAME.perf.tris = GAME.sceneCost ? GAME.sceneCost.tris : info.render.triangles;
     if (GAME.perf._t >= 1) {
       GAME.perf.fps = Math.round(GAME.perf._n / GAME.perf._t);
       GAME.perf._n = 0; GAME.perf._t = 0;
@@ -1032,7 +1067,7 @@
       updateHud(mph, rawDt);
     }
 
-    renderer.render(scene, camera);
+    renderFrame();
   }
   loop();
 })();

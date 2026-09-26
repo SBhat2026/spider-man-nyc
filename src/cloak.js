@@ -3,7 +3,7 @@
 // the shoulder line every frame; gravity + a speed-driven wind billow the rest.
 // Kept deliberately cheap (6×10 points, ~90 tris).
 (function () {
-  const COLS = 6, ROWS = 10;
+  const COLS = GAME.desktop ? 12 : 6, ROWS = GAME.desktop ? 18 : 10;
 
   class Cloak {
     constructor(scene) {
@@ -97,7 +97,7 @@
       }
       // distance constraints (structural), a few passes
       const restH = width / (COLS - 1), restV = drop / (ROWS - 1);
-      for (let iter = 0; iter < 3; iter++) {
+      for (let iter = 0; iter < (GAME.desktop ? 5 : 3); iter++) {
         for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
           const i = r * COLS + c;
           if (c < COLS - 1) this._constrain(i, i + 1, restH, r === 0);

@@ -7,6 +7,7 @@
   // ============================ textures ============================
   const TexCache = {};
   function facadeTextures(kind) {
+    if (GAME.desktopTexture) return GAME.desktopTexture(kind);
     if (TexCache[kind]) return TexCache[kind];
     // 1024 with an 8x8 bay grid (was 512 / 4x4): the tile covers twice the
     // wall before it repeats, which is what kills the obvious grid-wallpaper
@@ -177,6 +178,7 @@
   }
 
   function roofTextures() {
+    if (GAME.desktopTexture) return GAME.desktopTexture("roof");
     if (TexCache.roof) return TexCache.roof;
     const N = 256;
     const day = document.createElement('canvas'); day.width = day.height = N;
@@ -347,10 +349,11 @@
         }
         minX = Math.min(minX, bx0); maxX = Math.max(maxX, bx1);
         minZ = Math.min(minZ, bz0); maxZ = Math.max(maxZ, bz1);
-        const h = raw.h;
+        const h = GAME.desktop && raw.n === 'Empire State Building' ? 270 : GAME.desktop && raw.n === 'Chrysler Building' ? 230 : GAME.desktop && raw.n === '30 Rockefeller Plaza' ? 220 : raw.h;
         const hash = Math.abs((poly[0][0] * 31 + poly[0][1] * 17 + h * 7) | 0);
         let fam;
-        if (h > 100) fam = 'glass';
+        if (GAME.desktop && (/Empire State|Chrysler|Rockefeller|Woolworth/i.test(raw.n || '') || (h > 100 && hash % 5 === 0))) fam = 'stone';
+        else if (h > 100) fam = 'glass';
         else if (h > 45) fam = (hash % 3 === 0) ? 'glass' : 'stone';
         else fam = (hash % 3 === 0) ? 'stone' : 'brick';
         const area = Math.abs(signedArea(poly));
@@ -387,7 +390,7 @@
       };
       // meters per texture tile (4 windows / 4 floors per tile)
       // doubled for the 8x8 bay grid in facadeTextures — a window stays ~2 m
-      const TILE = { brick: [16, 22], stone: [20, 25], glass: [12, 26], blank: [18, 18] };
+      const TILE = GAME.desktop ? { brick: [11, 26], stone: [12, 28], glass: [16, 29], blank: [9, 9] } : { brick: [16, 22], stone: [20, 25], glass: [12, 26], blank: [18, 18] };
 
       for (const b of this.buildings) {
         const { poly, h, fam, hash } = b;
@@ -484,14 +487,20 @@
         // Standard (not Lambert) so facades take the scene's reflection probe:
         // glass towers get their brightness from what they REFLECT, which is
         // the single biggest step toward looking like real NYC glass.
-        const mat = new THREE.MeshStandardMaterial({
+        const mat = GAME.desktop ? new THREE.MeshStandardMaterial({
+          map: tex.map, emissiveMap: tex.emissiveMap, bumpMap: tex.bumpMap,
+          roughnessMap: tex.roughnessMap, bumpScale: fam === 'glass' ? 0.03 : 0.16,
+          roughness: 1, metalness: fam === 'glass' ? 0.2 : 0.02,
+          envMapIntensity: fam === 'glass' ? 0.55 : 0.1,
+          emissive: 0xffffff, emissiveIntensity: 0, vertexColors: true
+        }) : new THREE.MeshStandardMaterial({
           map: tex.map, emissiveMap: tex.emissiveMap,
           emissive: new THREE.Color(0xffa953), emissiveIntensity: 0,
           roughnessMap: tex.ormMap, metalnessMap: tex.ormMap,
           roughness: 1, metalness: 1,        // scaled BY the map channels
           vertexColors: true,
         });
-        mat.envMapIntensity = fam === 'glass' ? 1.15 : 0.35;
+        if (!GAME.desktop) mat.envMapIntensity = fam === 'glass' ? 1.15 : 0.35;
         this.wallMats.push(mat);
         famMat[fam] = mat;
       }
@@ -503,6 +512,7 @@
         vertexColors: true, side: THREE.DoubleSide,
       });
       roofMat.envMapIntensity = 0.25;
+      if (GAME.desktop) { roofMat.vertexColors = false; roofMat.emissive.setHex(0x000000); roofMat.userData.noGlow = true; }
       this.wallMats.push(roofMat);
 
       const mkMesh = (g, mat, uv) => {
