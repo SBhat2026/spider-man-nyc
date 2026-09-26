@@ -40,15 +40,21 @@
     for(let i=0;i<v.count;i++){const x=v.getX(i),y=v.getY(i);v.setZ(i,.014+.111*Math.sqrt(Math.max(.06,1-(x/.119)**2-((y-.851)/.155)**2))+(inset?.005:.001));}
     g.computeVertexNormals();return g;
   }
+  // The authored head read a full head too large and egg-like against the
+  // shoulders. Rather than re-deriving the section table (and desyncing the
+  // eyes, which are authored in absolute head coordinates), scale head AND
+  // eyes together about the neck-top pivot so they stay registered.
+  const HEAD_PIVOT=0.700, HEAD_K=0.885;
+  const shrinkHead=(g)=>{g.translate(0,-HEAD_PIVOT,0);g.scale(HEAD_K,HEAD_K,HEAD_K);g.translate(0,HEAD_PIVOT,0);return g;};
   GAME.buildDesktopParts=function(){
     const p=[],add=(geo,slot,lock,chain)=>p.push({geo,slot,lock,chain});
-    add(surface(sec([[-.08,.158,.108],[-.02,.161,.11],[.09,.151,.105],[.19,.147,.108],[.31,.166,.118],[.43,.205,.131],[.49,.215,.129],[.55,.198,.112],[.595,.160,.087],[.635,.077,.069],[.70,.056,.056]]),0,'torso'),'torso',null,['hips','spine','neckHead']);
+    add(surface(sec([[-.08,.158,.108],[-.02,.161,.11],[.09,.151,.105],[.19,.147,.108],[.31,.166,.118],[.43,.212,.133],[.49,.229,.132],[.55,.213,.115],[.595,.182,.096],[.635,.094,.077],[.70,.056,.056]]),0,'torso'),'torso',null,['hips','spine','neckHead']);
     add(surface(sec([[-.18,.117,.086],[-.12,.159,.104],[-.05,.164,.113],[.015,.158,.11]]),0,'hips'),'secondary',null,['hips','spine']);
-    add(surface(sec([[.692,.050,.057,.007],[.726,.064,.067,.013],[.755,.082,.084,.014],[.792,.103,.103,.013],[.844,.117,.113,.008],[.9,.112,.11,.003],[.949,.084,.085,0],[.974,.047,.052,0],[.985,.002,.003,0]]),0,'head'),'mask','neckHead');
+    add(shrinkHead(surface(sec([[.692,.050,.057,.007],[.726,.064,.067,.013],[.755,.082,.084,.014],[.792,.103,.103,.013],[.844,.117,.113,.008],[.9,.112,.11,.003],[.949,.084,.085,0],[.974,.047,.052,0],[.985,.002,.003,0]]),0,'head')),'mask','neckHead');
     for(const side of [-1,1]){
-      add(eye(side,false),'rim','neckHead');add(eye(side,true),'lens','neckHead');
+      add(shrinkHead(eye(side,false)),'rim','neckHead');add(shrinkHead(eye(side,true)),'lens','neckHead');
       const sh=side>0?'shoulderR':'shoulderL',el=side>0?'elbowR':'elbowL',hip=side>0?'hipR':'hipL',knee=side>0?'kneeR':'kneeL';
-      add(surface(sec([[.28,.046,.046],[.35,.062,.063,-.006],[.43,.071,.077,-.002],[.51,.077,.082],[.563,.081,.075],[.593,.060,.062],[.612,.018,.022]]),side*.215,'arm'),'sleeves',null,[sh,el]);
+      add(surface(sec([[.28,.046,.046],[.35,.062,.063,-.006],[.43,.071,.077,-.002],[.51,.079,.083],[.563,.088,.081],[.600,.082,.077],[.626,.058,.056]]),side*.215,'arm'),'sleeves',null,[sh,el]);
       add(surface(sec([[.015,.034,.035],[.07,.042,.043],[.17,.057,.059],[.23,.053,.052],[.28,.046,.046]]),side*.215,'arm'),'primary',null,[sh,el]);
       // Anatomical palms, individual curled fingers and a separate thumb.
       const hand=new THREE.SphereGeometry(1,20,14);hand.scale(.043,.058,.025);hand.translate(side*.215,-.025,.008);add(hand,'primary',el);
@@ -77,11 +83,13 @@
         c.fillStyle=secondary;c.fillRect(0,0,1024,1024);c.fillStyle=base;c.fillRect(150,0,205,1024);c.fillRect(610,700,360,324);
       }
       if(def.torso.web||slot==='mask'&&name!=='noir'&&name!=='black'){
-        c.strokeStyle=def.torso.web||'#252936';c.lineWidth=name==='og'?3:1.8;
+        // Denser and finer than the first pass: 18 radials at 1.8 px read as a
+        // coarse net at close range. Real suit webbing is a fine dense mesh.
+        c.strokeStyle=def.torso.web||'#252936';c.lineWidth=name==='og'?2.1:1.15;
         for(const center of [256,768]){
           const cy=slot==='mask'?565:500;
-          for(let a=0;a<Math.PI*2;a+=Math.PI/9){c.beginPath();c.moveTo(center,cy);c.lineTo(center+Math.cos(a)*950,cy+Math.sin(a)*950);c.stroke();}
-          for(let rad=46;rad<850;rad+=slot==='mask'?64:80){c.beginPath();c.ellipse(center,cy,rad*.7,rad,0,0,7);c.stroke();}
+          for(let a=0;a<Math.PI*2;a+=Math.PI/17){c.beginPath();c.moveTo(center,cy);c.lineTo(center+Math.cos(a)*950,cy+Math.sin(a)*950);c.stroke();}
+          for(let rad=30;rad<880;rad+=slot==='mask'?38:46){c.beginPath();c.ellipse(center,cy,rad*.7,rad,0,0,7);c.stroke();}
         }
       }
       if(slot==='torso')for(const [center,back] of [[256,false],[768,true]]){
@@ -89,9 +97,11 @@
         const size=name==='black'?6:name==='iron'?4.8:name==='miles'?4.5:name==='og'?3.5:2.5;
         spider(c,center,680,back?size*1.35:size,emblem);
       }
-      // Woven hexagonal fabric, kept subtle enough to read as textile at distance.
-      c.strokeStyle='rgba(255,255,255,.055)';c.lineWidth=.6;
-      for(let y=0;y<1024;y+=8)for(let x=0;x<1024;x+=9){c.beginPath();c.moveTo(x,y);c.lineTo(x+4,y+2);c.lineTo(x+4,y+6);c.lineTo(x,y+8);c.stroke();}
+      // NB: the fabric weave deliberately does NOT go in the albedo. Stroking
+      // ~14k sub-pixel white lines here aliased under mipmapping into coarse
+      // white speckle all over the suit. desktop-suits.js already supplies the
+      // weave as a tiling BUMP map, which is where a textile micro-pattern
+      // belongs — it reads as cloth without polluting the colour.
       if(name==='iron') {c.strokeStyle='#d5ae58';c.lineWidth=9;for(const x of [140,375,650,885]){c.beginPath();c.moveTo(x,0);c.lineTo(x+20,350);c.lineTo(x-25,700);c.lineTo(x,1024);c.stroke();}}
       const t=new THREE.CanvasTexture(cv);t.flipY=false;t.encoding=THREE.sRGBEncoding;t.anisotropy=8;t.wrapS=t.wrapT=THREE.RepeatWrapping;maps[slot]=t;
     }return GAME._suitMaps[name]=maps;

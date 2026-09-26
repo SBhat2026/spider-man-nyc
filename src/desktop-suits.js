@@ -29,18 +29,30 @@
   s.upgraded.primary.rough=.58;s.upgraded.secondary.rough=.81;
   s.noir.primary.rough=.85;s.noir.secondary.rough=.92;
   s.og.primary.rough=.46;s.og.secondary.rough=.66;
+  // Fabric weave, as a BUMP map only. The previous version was a hard-edged
+  // 4 px checker tiled 6x10 with bumpScale .019 — over a limb each cell landed
+  // several pixels wide and the suit read as reptile scales. A soft, much
+  // higher-frequency twill at a fraction of the depth reads as cloth instead.
   const cv=document.createElement('canvas');cv.width=cv.height=128;const ctx=cv.getContext('2d');
-  ctx.fillStyle='#888';ctx.fillRect(0,0,128,128);
-  for(let y=0;y<128;y+=4)for(let x=0;x<128;x+=4){ctx.fillStyle=(x+y)%8?'#aaa':'#666';ctx.fillRect(x,y,3,1);ctx.fillRect(x,y+1,1,2);}
-  const weave=new THREE.CanvasTexture(cv);weave.wrapS=weave.wrapT=THREE.RepeatWrapping;weave.repeat.set(6,10);weave.anisotropy=4;
+  ctx.fillStyle='#808080';ctx.fillRect(0,0,128,128);
+  ctx.lineWidth=1;
+  for(let i=-128;i<128;i+=3){
+    ctx.strokeStyle='rgba(255,255,255,.16)';
+    ctx.beginPath();ctx.moveTo(i,0);ctx.lineTo(i+128,128);ctx.stroke();
+    ctx.strokeStyle='rgba(0,0,0,.14)';
+    ctx.beginPath();ctx.moveTo(i+1.5,0);ctx.lineTo(i+129.5,128);ctx.stroke();
+  }
+  const weave=new THREE.CanvasTexture(cv);weave.wrapS=weave.wrapT=THREE.RepeatWrapping;weave.repeat.set(26,42);weave.anisotropy=8;
   const setSkin=GAME.Hero.prototype.setSkin;
   GAME.Hero.prototype.setSkin=function(name){
     setSkin.call(this,name);this.skinName=name;
     const maps=GAME.desktopSuitMaps(name);
     for(const slot of ['torso','mask','sleeves'])for(const mesh of this.slots[slot]||[]){mesh.material.map=maps[slot];mesh.material.color.setHex(0xffffff);}
     for(const slot of ['torso','mask','sleeves','primary','secondary','accent'])for(const mesh of this.slots[slot]||[]){
-      const m=mesh.material;m.bumpMap=weave;m.bumpScale=name==='iron'?.008:name==='black'?.006:.019;
-      if(name==='og'&&m.map){m.bumpMap=m.map;m.bumpScale=.009;}
+      const m=mesh.material;m.bumpMap=weave;m.bumpScale=name==='iron'?.0012:name==='black'?.001:.0026;
+      // OG's webbing is physically raised on the suit, so its own colour map
+      // doubles as the height source — but gently.
+      if(name==='og'&&m.map){m.bumpMap=m.map;m.bumpScale=.0035;}
       m.needsUpdate=true;mesh.castShadow=true;mesh.receiveShadow=true;
     }
     for(const mesh of this.slots.lens||[]){mesh.material.emissiveIntensity=name==='iron'?.34:.055;mesh.material.roughness=.18;}
