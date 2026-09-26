@@ -4,10 +4,10 @@
   class DesktopWorld {
     constructor(city,scene,lm){
       this.city=city;this.scene=scene;this.lm=lm;this.group=new THREE.Group();this.group.name='Desktop Manhattan detail';scene.add(this.group);
-      this.boxes=[];this.metals=[];this.posts=[];this.solids=[];this.lights=[];
+      this.boxes=[];this.metals=[];this.posts=[];this.solids=[];this.lights=[];this.screens=[];
       this.stone=new THREE.MeshStandardMaterial({color:0xa19e95,roughness:.85});
       this.metal=new THREE.MeshStandardMaterial({color:0x3e474b,roughness:.56,metalness:.6});
-      this._towers();this._facadeDetails();this._posters();this._timesSquare();this._easterEggs();
+      this._towers();this._facadeDetails();this._posters();this._timesSquare();this._timesSquareScreens();this._easterEggs();
       this._instances(this.boxes,new THREE.BoxGeometry(1,1,1),this.stone);
       this._instances(this.metals,new THREE.BoxGeometry(1,1,1),this.metal);
       this._instances(this.posts,new THREE.CylinderGeometry(1,1,1,8),this.metal);
@@ -87,6 +87,65 @@
       // Light bounces have a bounded footprint and only four real lights.
       for(let i=0;i<4;i++){const t=(i+.5)/4,light=new THREE.PointLight([0x56bfff,0xf876ad,0xffd78c,0x6fd6dc][i],0,46,2);light.position.set(a.x+dx*t,6,a.z+dz*t);this.group.add(light);this.lights.push(light);}
     }
+    // The plaza had benches, bollards and four lights but not a single screen —
+    // which is the one thing Times Square actually is. Mount big emissive
+    // boards in tiers up every facade that fronts the spine, mixing tall
+    // banners and wide screens, and let them blaze as the sun drops.
+    _timesSquareScreens(){
+      if(!this.lm.timesSquare)return;
+      const a=this.lm.ll(40.7561,-73.98645),b=this.lm.ll(40.75975,-73.98488);
+      const sx=b.x-a.x,sz=b.z-a.z,slen=Math.hypot(sx,sz)||1,ux=sx/slen,uz=sz/slen;
+      const distToSpine=(x,z)=>{
+        let t=((x-a.x)*ux+(z-a.z)*uz);t=Math.max(0,Math.min(slen,t));
+        return Math.hypot(x-(a.x+ux*t),z-(a.z+uz*t));
+      };
+      const build=(portrait)=>{
+        const atlas=GAME.desktopAdAtlas(portrait);
+        const pos=[],uv=[],idx=[],nrm=[];let n=0;
+        for(const bd of this.city.buildings){
+          if(bd.h<14)continue;
+          const cx=(bd.bx0+bd.bx1)/2,cz=(bd.bz0+bd.bz1)/2;
+          if(distToSpine(cx,cz)>95)continue;
+          const f=this.lm._facade(bd);if(!f||f.len<9)continue;
+          // the board has to face the plaza, not the back alley
+          if(distToSpine(f.mx+f.nx*6,f.mz+f.nz*6)>=distToSpine(f.mx,f.mz))continue;
+          if(this.city.isSolid(f.mx+f.nx*2.2,6,f.mz+f.nz*2.2))continue;
+          const tiers=Math.min(portrait?3:4,Math.max(1,Math.floor((bd.h-8)/13)));
+          for(let k=0;k<tiers;k++){
+            const w=portrait?Math.min(f.len*.30,7.5):Math.min(f.len*.82,17);
+            const h=portrait?w*2:w*0.52;
+            const y=9.5+k*(h+3.2);
+            if(y+h/2>bd.h-1.5)break;
+            // tall banners hug one end of the facade, wide screens centre
+            const slide=portrait?((k%2)?1:-1)*f.len*.28:0;
+            const x=f.mx+f.nx*.35+f.ux*slide,z=f.mz+f.nz*.35+f.uz*slide;
+            const rx=f.nz,rz=-f.nx,base=pos.length/3;
+            pos.push(x-rx*w/2,y-h/2,z-rz*w/2, x+rx*w/2,y-h/2,z+rz*w/2,
+                     x+rx*w/2,y+h/2,z+rz*w/2, x-rx*w/2,y+h/2,z-rz*w/2);
+            for(let i=0;i<4;i++)nrm.push(f.nx,0,f.nz);
+            const cell=(n*7+k*3)%atlas.count,cols=atlas.cols,rows=atlas.rows;
+            const u=(cell%cols)/cols,v=1-Math.floor(cell/cols)/rows,pad=.0012;
+            uv.push(u+pad,v-1/rows+pad, u+1/cols-pad,v-1/rows+pad,
+                    u+1/cols-pad,v-pad, u+pad,v-pad);
+            idx.push(base,base+1,base+2,base,base+2,base+3);n++;
+          }
+          if(n>(portrait?120:90))break;
+        }
+        if(!n)return 0;
+        const g=new THREE.BufferGeometry();
+        g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+        g.setAttribute('normal',new THREE.Float32BufferAttribute(nrm,3));
+        g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
+        g.setIndex(idx);
+        const mat=new THREE.MeshStandardMaterial({map:atlas.tex,emissiveMap:atlas.tex,
+          emissive:new THREE.Color(0xffffff),emissiveIntensity:.25,
+          roughness:.42,metalness:0,side:THREE.FrontSide});
+        const m=new THREE.Mesh(g,mat);m.name='Times Square screens';
+        this.group.add(m);this.screens.push(mat);
+        return n;
+      };
+      this.screenCount=build(true)+build(false);
+    }
     _easterEggs(){
       const spots=[
         [40.7488,-73.9904,'feast','F.E.A.S.T.','A neighborhood that cares',0xd58b48],
@@ -109,7 +168,11 @@
         this.lm.eggs.push({id,x:f.mx+f.nx*4,z:f.mz+f.nz*4,r:22,label:title,icon:'#'+col.toString(16)});
       }
     }
-    update(dt,player,rig){this.lights.forEach(l=>{const near=player.pos.distanceTo(l.position)<180;l.visible=near;l.intensity=near?Math.max(0,rig.windowGlow-.15)*4.8:0;});}
+    update(dt,player,rig){
+      // screens are dim in daylight and blaze at dusk/night
+      const glow=.22+Math.min(1.35,rig.windowGlow)*1.25;
+      for(const m of this.screens)m.emissiveIntensity=glow;
+      this.lights.forEach(l=>{const near=player.pos.distanceTo(l.position)<180;l.visible=near;l.intensity=near?Math.max(0,rig.windowGlow-.15)*4.8:0;});}
     dispose(){this.scene.remove(this.group);this.city.desktopSolids=[];const gs=new Set(),ms=new Set(),ts=new Set();this.group.traverse(o=>{if(o.geometry)gs.add(o.geometry);if(o.material){ms.add(o.material);if(o.material.map&&!o.material.map.userData.shared)ts.add(o.material.map);}});gs.forEach(g=>g.dispose());ms.forEach(m=>m.dispose());ts.forEach(t=>t.dispose());}
   }
   // Accurate OSM bases plus collision for the authored upper stories.
