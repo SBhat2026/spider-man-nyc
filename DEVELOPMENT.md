@@ -43,10 +43,43 @@ unchanged and `main` is untouched.
 Measured after the additions, street level in Times Square: 499 draw calls,
 2.5 M triangles. No console errors.
 
+### Suit pass — contact-sheet review of all nine
+
+Rendered all nine suits side by side, in isolation and again in-world.
+
+- 2099's cloak was rendering hot magenta: cloak colour is applied with
+  `Color.setHex`, which does NOT convert, while every suit material goes
+  through `convertSRGBToLinear`. Fixed by converting the cloak to match.
+- The four dark suits read as flat cutouts. Root cause found by inspection:
+  torso/mask/sleeves do not use `primary.color` at all — `desktopSuitMaps`
+  paints a canvas atlas from `def.torso.base` and forces the material colour
+  to white, so lifting the limb colours changed nothing on the body. Lifted
+  `torso.base` for black/miles/y2099/noir.
+- 2099 and Miles now read clearly. Symbiote and Noir are still very dark;
+  partially inherent (Symbiote is `torsoMetal`, so albedo barely contributes)
+  and partially unsolved. Added a camera-tracking rim light for all suits,
+  which helps only marginally. NOT considered finished.
+- Verified working: Iron Spider's waldo arms, Noir's fedora and cloak,
+  Miles/Symbiote/2099 emblems, OG's heavier webbing.
+
+### Combat — first interactive playtest
+
+Driven through the real input path with the combat tick attached (note
+`debug.step` is a reduced loop and does NOT tick combat; an early test that
+skipped it made combat look inert when it was fine).
+
+Target acquired at range, enemy closed 8.4 m to 1.8 m, strikes landed
+75 -> 55 -> 25 hp with focus and combo building and the enemy stunning.
+Over a longer brawl: two enemies downed, player damaged 100 -> 70 -> 34,
+focus reached 72, finisher consumed it (72 -> 30) and downed a third.
+Web / dodge / parry / suit power all executed without error.
+
 ### Still pending
 
-- Per-suit identity pass and full animation playtest (only Stark inspected).
-- Combat feel: not yet interactively played, only the authored checks.
-- Street-level ground/road materials are still flat.
-- New music tracks.
+- Symbiote and Noir readability (above).
+- Street-level ground and road materials are still flat.
+- Per-suit animation playtest (poses inspected statically only).
+- New music tracks. NB: I can run audio but cannot hear it, so I can't judge
+  whether a generated track matches the existing style — this needs either
+  real audio files or explicit acceptance of unheard procedural music.
 - Mobile regression, performance capture on the target M5, release review.

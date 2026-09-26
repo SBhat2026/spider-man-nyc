@@ -71,6 +71,7 @@
 
   const hero = new GAME.Hero();
   hero.addTo(scene);
+  if (GAME.installHeroRim) GAME.installHeroRim(scene, hero);
 
   // comic sound-effect bubbles (Noir suit only) — grayscale onomatopoeia
   if (GAME.ComicFX) GAME.comicFX = new GAME.ComicFX(scene);
@@ -692,6 +693,7 @@
       camera.position.x += (Math.random() - 0.5) * 0.22 * fx.shake;
       camera.position.y += (Math.random() - 0.5) * 0.18 * fx.shake;
     }
+    if (GAME.updateHeroRim) GAME.updateHeroRim(camera, hero);
     const wantFov = (GAME.baseFov ? GAME.baseFov() : C.fov) +
                     C.swingFovBoost * speedK + 8 * fx.pulse;
     camera.fov += (wantFov - camera.fov) * Math.min(1, dt * 6);

@@ -20,14 +20,41 @@
     if(key==='miles')help.keys.push(['hold K','camouflage; drains energy, recovers while visible']);
   });
   const s=GAME.SKINS;
+  // Desktop-only albedo lift for the dark suits. At 0x141418 (20,20,24) these
+  // sat below the point where any highlight can separate form from silhouette,
+  // so in-world they read as flat cutouts against sky. Screen-black costumes
+  // are rendered as dark CHARCOAL with specular doing the shaping; the colours
+  // below still read black but leave headroom for the reflection to work.
+  // NB these are sRGB: skinMaterial runs convertSRGBToLinear, which drops them
+  // roughly another 4x, so they have to start higher than they look here.
+  // The torso/mask/sleeve slots do NOT use primary.color: desktopSuitMaps
+  // paints a canvas atlas from def.torso.base and the material colour is
+  // forced white. So the body reads from torso.base and lifting the limb
+  // colours alone left the chest and head as black as before.
+  s.black.torso.base='#2e2e36';
+  s.miles.torso.base='#1e2445';
+  s.y2099.torso.base='#28306a';
+  s.noir.torso.base='#31313a';s.noir.torso.web='#4c4c57';
+  s.black.primary.color=0x3c3c47;s.black.secondary.color=0x31313b;s.black.accent.color=0x3c3c47;
+  s.miles.primary.color=0x2c3360;s.miles.secondary.color=0x232950;
+  s.y2099.primary.color=0x39447f;s.y2099.secondary.color=0x2a3163;
+  s.noir.primary.color=0x40404a;s.noir.secondary.color=0x35353e;s.noir.accent.color=0x2b2b33;
   s.classic.rim=0x111827;s.classic.primary.rough=.61;s.classic.secondary.rough=.79;
+  // The dark suits were set glossy but never given any envMapIntensity, so
+  // they had nothing to reflect and collapsed into flat unlit silhouettes with
+  // no readable form. A near-black suit gets essentially ALL its shape from
+  // reflection, so these matter more here than on the red suits.
   s.black.primary.rough=.22;s.black.secondary.rough=.26;s.black.torso.emblemScale=1.85;
+  s.black.primary.envI=1.45;s.black.secondary.envI=1.3;s.black.accent.envI=1.45;
   s.iron.primary.rough=.25;s.iron.primary.envI=.7;s.iron.accent.envI=1.15;s.iron.secondary.rough=.32;
-  s.miles.primary.rough=.75;s.miles.secondary.rough=.72;s.miles.torso.emblemScale=1.15;
+  s.miles.primary.rough=.62;s.miles.secondary.rough=.66;s.miles.torso.emblemScale=1.15;
+  s.miles.primary.envI=.85;s.miles.secondary.envI=.8;s.miles.accent.envI=.9;
   s.y2099.primary.rough=.39;s.y2099.secondary.rough=.43;s.y2099.cloak=true;
+  s.y2099.primary.envI=1.1;s.y2099.secondary.envI=1.0;s.y2099.accent.envI=1.2;
   s.tasm.primary.rough=.48;s.tasm.secondary.rough=.6;s.tasm.bigLens=1.13;
   s.upgraded.primary.rough=.58;s.upgraded.secondary.rough=.81;
-  s.noir.primary.rough=.85;s.noir.secondary.rough=.92;
+  s.noir.primary.rough=.78;s.noir.secondary.rough=.86;
+  s.noir.primary.envI=.5;s.noir.secondary.envI=.45;s.noir.accent.envI=.5;
   s.og.primary.rough=.46;s.og.secondary.rough=.66;
   // Fabric weave, as a BUMP map only. The previous version was a hard-edged
   // 4 px checker tiled 6x10 with bumpScale .019 — over a limb each cell landed
@@ -43,6 +70,29 @@
     ctx.beginPath();ctx.moveTo(i+1.5,0);ctx.lineTo(i+129.5,128);ctx.stroke();
   }
   const weave=new THREE.CanvasTexture(cv);weave.wrapS=weave.wrapT=THREE.RepeatWrapping;weave.repeat.set(26,42);weave.anisotropy=8;
+
+  // ---- character rim light -------------------------------------------
+  // Dark suits read as flat cutouts because the sunset rig has one key and a
+  // broad hemi: nothing separates chest from arm. A low, cool rim that tracks
+  // the camera restores the silhouette on every suit without touching the
+  // city's lighting budget (one light, and it only ever hugs the player).
+  GAME.installHeroRim=function(scene,hero){
+    if(GAME._heroRim)return GAME._heroRim;
+    const rim=new THREE.DirectionalLight(0xbcd2ff,1.45);
+    rim.castShadow=false;scene.add(rim);scene.add(rim.target);
+    GAME._heroRim=rim;
+    return rim;
+  };
+  GAME.updateHeroRim=function(camera,hero){
+    const rim=GAME._heroRim;if(!rim||!hero)return;
+    const p=hero.root.position;
+    // behind-and-above the subject relative to the camera → true rim
+    const dx=p.x-camera.position.x, dz=p.z-camera.position.z;
+    const l=Math.hypot(dx,dz)||1;
+    rim.position.set(p.x+dx/l*4.5, p.y+4.2, p.z+dz/l*4.5);
+    rim.target.position.set(p.x,p.y+1,p.z);
+    rim.target.updateMatrixWorld();
+  };
   const setSkin=GAME.Hero.prototype.setSkin;
   GAME.Hero.prototype.setSkin=function(name){
     setSkin.call(this,name);this.skinName=name;
@@ -52,7 +102,7 @@
       const m=mesh.material;m.bumpMap=weave;m.bumpScale=name==='iron'?.0012:name==='black'?.001:.0026;
       // OG's webbing is physically raised on the suit, so its own colour map
       // doubles as the height source — but gently.
-      if(name==='og'&&m.map){m.bumpMap=m.map;m.bumpScale=.0035;}
+      if(name==='og'&&m.map){m.bumpMap=m.map;m.bumpScale=.0016;}
       m.needsUpdate=true;mesh.castShadow=true;mesh.receiveShadow=true;
     }
     for(const mesh of this.slots.lens||[]){mesh.material.emissiveIntensity=name==='iron'?.34:.055;mesh.material.roughness=.18;}
@@ -67,7 +117,8 @@
         const z=.014+.111*Math.sqrt(Math.max(.06,1-(x/.119)**2-((y-.851)/.155)**2))+(slot==='lens'?.005:.001);a.setXYZ(i,x,y,z);}
       a.needsUpdate=true;g.computeVertexNormals();
     }
-    if(this.cloak){this.cloak.mesh.material.color.setHex(name==='y2099'?0x8f1634:0x17191d);this.cloak._init=false;}
+    // 0x8f1634 blew out to hot magenta through ACES at sunset exposure
+    if(this.cloak){this.cloak.mesh.material.color.setHex(name==='y2099'?0x7e1832:0x17191d).convertSRGBToLinear();this.cloak._init=false;}
   };
   const target=GAME.Hero.prototype._targets;
   GAME.Hero.prototype._targets=function(state){
