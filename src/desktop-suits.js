@@ -31,14 +31,24 @@
   // paints a canvas atlas from def.torso.base and the material colour is
   // forced white. So the body reads from torso.base and lifting the limb
   // colours alone left the chest and head as black as before.
-  s.black.torso.base='#2e2e36';
+  // Symbiote was torsoMetal with metalness .3 over a near-black albedo. Metal
+  // tints its specular BY the albedo, so a black metal reflects black — which
+  // is why no amount of envMapIntensity rescued it. A symbiote is wet organic
+  // tissue, not metal: drop metalness to almost nothing and let the low
+  // roughness carry the gloss, so the highlight reads white against the black.
+  s.black.torso.base='#40404c';
+  s.black.torsoMetalness=.04;
+  s.black.primary.metal=.04;s.black.secondary.metal=.04;s.black.accent.metal=.04;
   s.miles.torso.base='#1e2445';
   s.y2099.torso.base='#28306a';
-  s.noir.torso.base='#31313a';s.noir.torso.web='#4c4c57';
-  s.black.primary.color=0x3c3c47;s.black.secondary.color=0x31313b;s.black.accent.color=0x3c3c47;
+  // Noir is matte by design (rough .78), so it gets almost nothing from
+  // reflection and has to read on albedo alone. Lift the cloth and make the
+  // web lines light enough to describe the surface.
+  s.noir.torso.base='#474751';s.noir.torso.web='#64646f';
+  s.black.primary.color=0x4a4a57;s.black.secondary.color=0x3e3e49;s.black.accent.color=0x4a4a57;
   s.miles.primary.color=0x2c3360;s.miles.secondary.color=0x232950;
   s.y2099.primary.color=0x39447f;s.y2099.secondary.color=0x2a3163;
-  s.noir.primary.color=0x40404a;s.noir.secondary.color=0x35353e;s.noir.accent.color=0x2b2b33;
+  s.noir.primary.color=0x52525e;s.noir.secondary.color=0x45454f;s.noir.accent.color=0x3a3a43;
   s.classic.rim=0x111827;s.classic.primary.rough=.61;s.classic.secondary.rough=.79;
   // The dark suits were set glossy but never given any envMapIntensity, so
   // they had nothing to reflect and collapsed into flat unlit silhouettes with

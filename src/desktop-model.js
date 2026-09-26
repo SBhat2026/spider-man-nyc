@@ -48,14 +48,17 @@
   const shrinkHead=(g)=>{g.translate(0,-HEAD_PIVOT,0);g.scale(HEAD_K,HEAD_K,HEAD_K);g.translate(0,HEAD_PIVOT,0);return g;};
   GAME.buildDesktopParts=function(){
     const p=[],add=(geo,slot,lock,chain)=>p.push({geo,slot,lock,chain});
-    add(surface(sec([[-.08,.158,.108],[-.02,.161,.11],[.09,.151,.105],[.19,.147,.108],[.31,.166,.118],[.43,.212,.133],[.49,.229,.132],[.55,.213,.115],[.595,.182,.096],[.635,.094,.077],[.70,.056,.056]]),0,'torso'),'torso',null,['hips','spine','neckHead']);
+    add(surface(sec([[-.08,.158,.108],[-.02,.161,.11],[.09,.151,.105],[.19,.147,.108],[.31,.166,.118],[.43,.212,.133],[.49,.229,.132],[.55,.216,.118],[.583,.204,.110],[.610,.177,.099],[.632,.135,.086],[.652,.091,.074],[.70,.056,.056]]),0,'torso'),'torso',null,['hips','spine','neckHead']);
     add(surface(sec([[-.18,.117,.086],[-.12,.159,.104],[-.05,.164,.113],[.015,.158,.11]]),0,'hips'),'secondary',null,['hips','spine']);
     add(shrinkHead(surface(sec([[.692,.050,.057,.007],[.726,.064,.067,.013],[.755,.082,.084,.014],[.792,.103,.103,.013],[.844,.117,.113,.008],[.9,.112,.11,.003],[.949,.084,.085,0],[.974,.047,.052,0],[.985,.002,.003,0]]),0,'head')),'mask','neckHead');
     for(const side of [-1,1]){
       add(shrinkHead(eye(side,false)),'rim','neckHead');add(shrinkHead(eye(side,true)),'lens','neckHead');
       const sh=side>0?'shoulderR':'shoulderL',el=side>0?'elbowR':'elbowL',hip=side>0?'hipR':'hipL',knee=side>0?'kneeR':'kneeL';
-      add(surface(sec([[.28,.046,.046],[.35,.062,.063,-.006],[.43,.071,.077,-.002],[.51,.079,.083],[.563,.088,.081],[.600,.082,.077],[.626,.058,.056]]),side*.215,'arm'),'sleeves',null,[sh,el]);
+      add(surface(sec([[.28,.046,.046],[.35,.062,.063,-.006],[.43,.071,.077,-.002],[.51,.079,.083],[.563,.089,.082],[.592,.087,.080],[.612,.075,.070],[.630,.051,.049]]),side*.215,'arm'),'sleeves',null,[sh,el]);
       add(surface(sec([[.015,.034,.035],[.07,.042,.043],[.17,.057,.059],[.23,.053,.052],[.28,.046,.046]]),side*.215,'arm'),'primary',null,[sh,el]);
+      // NB the extra sections above the deltoid exist to ROUND the shoulder:
+      // three points took the cap from .182 to .094 in one step, which bevelled
+      // it. CatmullRom needs the intermediate samples to dome it properly.
       // Anatomical palms, individual curled fingers and a separate thumb.
       const hand=new THREE.SphereGeometry(1,20,14);hand.scale(.043,.058,.025);hand.translate(side*.215,-.025,.008);add(hand,'primary',el);
       for(let f=0;f<4;f++){const g=new THREE.CapsuleGeometry(.010, .035+(f===1?.007:0),4,8);g.rotateX(-.25);g.translate(side*.215+(f-1.5)*.019,-.081,.016);add(g,'primary',el);}

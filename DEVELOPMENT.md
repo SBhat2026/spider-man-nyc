@@ -55,10 +55,14 @@ Rendered all nine suits side by side, in isolation and again in-world.
   paints a canvas atlas from `def.torso.base` and forces the material colour
   to white, so lifting the limb colours changed nothing on the body. Lifted
   `torso.base` for black/miles/y2099/noir.
-- 2099 and Miles now read clearly. Symbiote and Noir are still very dark;
-  partially inherent (Symbiote is `torsoMetal`, so albedo barely contributes)
-  and partially unsolved. Added a camera-tracking rim light for all suits,
-  which helps only marginally. NOT considered finished.
+- 2099 and Miles read clearly after the `torso.base` fix.
+- Symbiote and Noir RESOLVED in a follow-up. Symbiote's real problem was
+  `torsoMetal` with metalness .3: a metal tints its specular by its own
+  albedo, so a black metal reflects black and no envMapIntensity could
+  rescue it. Dropped metalness to .04 so the low roughness carries a white
+  gloss highlight over the dark base — it still reads black but now has
+  form. Noir is matte by design and gets nothing from reflection, so it was
+  lifted on albedo and its web lines lightened to describe the surface.
 - Verified working: Iron Spider's waldo arms, Noir's fedora and cloak,
   Miles/Symbiote/2099 emblems, OG's heavier webbing.
 
@@ -74,9 +78,14 @@ Over a longer brawl: two enemies downed, player damaged 100 -> 70 -> 34,
 focus reached 72, finisher consumed it (72 -> 30) and downed a third.
 Web / dodge / parry / suit power all executed without error.
 
+### Shoulders
+
+Rounded. The torso cap went .182 -> .094 in a single step, which read as a
+bevel; CatmullRom needs intermediate samples to dome it. Added three sections
+over the deltoid and rounded the arm cap to match.
+
 ### Still pending
 
-- Symbiote and Noir readability (above).
 - Street-level ground and road materials are still flat.
 - Per-suit animation playtest (poses inspected statically only).
 - New music tracks. NB: I can run audio but cannot hear it, so I can't judge
