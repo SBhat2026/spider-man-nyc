@@ -158,20 +158,51 @@
       if(p.x<B.minX||p.x>B.maxX||p.z<B.minZ||p.z>B.maxZ)return;
       const b=this.lm._near(p,220,b=>b.h>34&&b.h<130);if(!b)return;
       const top=b.h;
-      // Roofs are cluttered with bulkheads, water towers and AC units, and the
-      // bare centroid buried him behind one. Spiral out for a clear patch.
-      let cx=(b.bx0+b.bx1)/2, cz=(b.bz0+b.bz1)/2;
-      const clear=(x,z)=>!this.city.isSolid(x,top+1.1,z)&&!this.city.isSolid(x,top+2.0,z);
-      if(!clear(cx,cz)){
-        let found=false;
-        for(let r=2.5;r<=14&&!found;r+=2.5){
-          for(let a=0;a<6.283&&!found;a+=0.52){
-            const x=cx+Math.cos(a)*r,z=cz+Math.sin(a)*r;
-            // stay on the roof, not off the parapet
-            if(x<b.bx0+2||x>b.bx1-2||z<b.bz0+2||z>b.bz1-2)continue;
-            if(clear(x,z)){cx=x;cz=z;found=true;}
-          }
+      // Roofs are cluttered with bulkheads, water towers and AC units. An
+      // earlier pass only asked whether he was INSIDE one, which he wasn't —
+      // he was standing politely behind a stair bulkhead, invisible from every
+      // direction a player actually arrives from. Score the roof instead:
+      // the spot that is furthest from the clutter wins, and he then turns to
+      // face the most open stretch of sky so you meet his eyes on the way in.
+      const props=b.props||[];
+      const nearest=(x,z)=>{
+        let d=Infinity;
+        for(const pr of props){
+          if(pr.top<=top+0.4)continue;                 // too low to hide him
+          d=Math.min(d,Math.hypot(x-pr.x,z-pr.z)-pr.r);
         }
+        return d;
+      };
+      let cx=(b.bx0+b.bx1)/2, cz=(b.bz0+b.bz1)/2, bestScore=-Infinity, sx, sz;
+      for(let r=0;r<=16;r+=2){
+        const steps=r===0?1:Math.max(8,Math.round(r*2));
+        for(let i=0;i<steps;i++){
+          const a=i/steps*6.283;
+          const x=cx+Math.cos(a)*r, z=cz+Math.sin(a)*r;
+          // 3.4m inset: right against the parapet it crops him at the waist
+          if(x<b.bx0+3.4||x>b.bx1-3.4||z<b.bz0+3.4||z>b.bz1-3.4)continue;
+          if(this.city.isSolid(x,top+1.1,z)||this.city.isSolid(x,top+2.0,z))continue;
+          // clearance is what matters; break ties toward the roof edge, where
+          // there is sky behind him instead of more grey bulkhead
+          const edge=Math.min(x-b.bx0,b.bx1-x,z-b.bz0,b.bz1-z);
+          const sc=Math.min(nearest(x,z),9)*3 - edge*0.35;
+          if(sc>bestScore){bestScore=sc;sx=x;sz=z;}
+        }
+      }
+      if(sx!==undefined){cx=sx;cz=sz;}
+      // face the widest gap in the clutter ring
+      let faceYaw=Math.random()*Math.PI*2, faceBest=-Infinity;
+      for(let a=0;a<6.283;a+=0.26){
+        let d=14;
+        for(const pr of props){
+          if(pr.top<=top+0.4)continue;
+          const vx=pr.x-cx, vz=pr.z-cz;
+          const along=vx*Math.cos(a)+vz*Math.sin(a);
+          if(along<=0)continue;
+          const off=Math.abs(-vx*Math.sin(a)+vz*Math.cos(a));
+          if(off<pr.r+1.2)d=Math.min(d,along-pr.r);
+        }
+        if(d>faceBest){faceBest=d;faceYaw=a;}
       }
 
       // crude paint-program skin
@@ -194,11 +225,22 @@
       const tex=new THREE.CanvasTexture(cv);tex.encoding=THREE.sRGBEncoding;
 
       const g=new THREE.Group();
-      const flat=(m)=>new THREE.MeshBasicMaterial(m);      // unlit, on purpose
+      // Unlit, on purpose — but MeshBasicMaterial takes its colour raw, and the
+      // renderer's sRGB output then gamma-encodes it, so a plain setHex comes
+      // out washed to pastel. The canvas texture is tagged sRGB and survives;
+      // the flat colours have to be converted by hand to match it.
+      const flat=(m)=>{
+        const mat=new THREE.MeshBasicMaterial(m);
+        if(m.color!==undefined)mat.color.convertSRGBToLinear();
+        return mat;
+      };
       const bodyMat=flat({map:tex});
       const torso=new THREE.Mesh(new THREE.CapsuleGeometry(.32,.62,3,10),bodyMat);
       torso.position.y=1.16;g.add(torso);
-      const head=new THREE.Mesh(new THREE.SphereGeometry(.33,12,10),flat({color:0xd32b2b}));
+      // the head wears the same paint-program mask, so the webbing carries up
+      const htex=tex.clone();htex.needsUpdate=true;
+      htex.wrapS=htex.wrapT=THREE.RepeatWrapping;htex.repeat.set(1,.62);htex.offset.set(0,.34);
+      const head=new THREE.Mesh(new THREE.SphereGeometry(.33,12,10),flat({map:htex}));
       head.scale.set(1.14,.94,1);head.position.y=1.86;g.add(head);
       // mismatched eyes: different size, different height, one tilted
       const eyeMat=flat({color:0xffffff});
@@ -220,7 +262,8 @@
       limb(.19,.44,.56,-.04,flat({color:0x2b3ea8}));
 
       g.position.set(cx,top,cz);
-      g.rotation.y=Math.random()*Math.PI*2;
+      // the model faces its own local +Z, so yaw is measured off that
+      g.rotation.y=Math.atan2(Math.cos(faceYaw),Math.sin(faceYaw));
       g.scale.setScalar(.92);
       this.group.add(g);
       this.spooder=g;

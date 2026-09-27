@@ -122,3 +122,19 @@ hold up on slower hardware:
   a one-off stall (>60 ms) are discarded rather than learned from — without
   that guard a backgrounded tab ratchets the resolution down and never
   recovers, which is exactly what it did in testing before the guard landed.
+
+**spooder man, actually visible.** Two bugs found by finally getting a clean
+look at him. His flat-colour parts were `MeshBasicMaterial` colours set
+straight from hex — the renderer's sRGB output then gamma-encodes them, so the
+head, arms and legs came out pastel pink and periwinkle while the
+sRGB-tagged canvas torso stayed correctly saturated. Same class of bug as the
+2099 cloak; fixed by converting the flat colours by hand. The head also now
+wears the same paint-program mask texture, so the wobbly webbing carries up
+from the torso.
+
+His placement was worse. The old spiral only asked whether he was *inside*
+a rooftop solid, which he never was — he was standing politely behind a stair
+bulkhead, invisible from every direction a player arrives from. Placement now
+scores the whole roof on distance to the clutter in `b.props`, keeps a 3.4 m
+inset so the parapet cannot crop him at the waist, and turns him to face the
+widest gap in the clutter ring so you meet his eyes on the way in.
