@@ -883,10 +883,32 @@
     // Long enough that the springs actually REACH the pose and hold it a beat
     // before easing out — otherwise the landing only half-forms.
     startLanding(roll, power) {
-      this.landTimer = roll ? 0.75 : 0.68;
+      this.landTimer = this._landDur = roll ? 0.75 : 0.68;
       this._landRoll = !!roll;
       this._landPower = power || 1;
       if (roll) this._rollT = 0;
+    }
+
+    // Landing envelope. The old version snapped to the full pose, held it dead
+    // still for 0.4s and then released on a straight line — half a second of
+    // statue followed by a slide back to neutral. A real landing absorbs, then
+    // pushes back OFF the deck: hold the compression only briefly, release on
+    // a smoothstep, and let the release overshoot slightly past neutral so the
+    // body rises out of the crouch instead of drifting out of it. Depth scales
+    // with impact power, bottoming out at the authored pose.
+    _landK() {
+      const dur = this._landDur || 0.68;
+      const u = 1 - Math.max(0, this.landTimer) / dur;       // 0 impact → 1 done
+      const hold = 0.30;
+      // The 3-point pose is FK-verified at exactly 1.0 — its bodyY of -0.5 puts
+      // the hips as low as they can go before the torso clips through the deck.
+      // So power can only make a landing SHALLOWER, never deeper: a light step
+      // down barely folds, a full-height drop hits the authored pose.
+      const depth = 0.68 + 0.32 * Math.min(1, this._landPower || 1);
+      if (u <= hold) return depth;
+      const r = (u - hold) / (1 - hold);                     // 0 → 1 release
+      const ease = r * r * (3 - 2 * r);
+      return depth * (1 - ease) - 0.12 * Math.sin(Math.PI * r) * depth;
     }
 
     _targets(state) {
@@ -1066,8 +1088,7 @@
         t.spineX = 0.28; t.headX = -0.32;
       } else if (this.landTimer > 0 && this._landRoll) {
         // rolling recovery: tight forward tuck, arms wrapped, curled spine
-        // (hold at full, then ease out over the last 0.28s)
-        const k = Math.min(1, this.landTimer / 0.28);
+        const k = this._landK();
         t.hipRx = -1.7 * k; t.hipLx = -1.7 * k;
         t.kneeRx = 2.2 * k; t.kneeLx = 2.2 * k;
         t.shRx = -1.5 * k; t.shLx = -1.5 * k;
@@ -1077,8 +1098,7 @@
         t.bodyY = -0.35 * k;
       } else if (this.landTimer > 0) {
         // the superhero 3-point landing: right fist to the deck, left leg out
-        // (hold at full, then ease out over the last 0.28s)
-        const k = Math.min(1, this.landTimer / 0.28);
+        const k = this._landK();
         // FK-verified 3-point: R fist plants forward-down, L arm sweeps out-left
         t.hipRx = -1.55 * k; t.kneeRx = 2.0 * k; t.hipRz = -0.1 * k;   // tucked under
         t.hipLx = -0.5 * k; t.kneeLx = 0.35 * k; t.hipLz = 0.55 * k;   // extended out

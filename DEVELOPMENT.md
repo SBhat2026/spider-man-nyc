@@ -138,3 +138,15 @@ bulkhead, invisible from every direction a player arrives from. Placement now
 scores the whole roof on distance to the clutter in `b.props`, keeps a 3.4 m
 inset so the parapet cannot crop him at the waist, and turns him to face the
 widest gap in the clutter ring so you meet his eyes on the way in.
+
+**Landings.** Both the 3-point and the rolling recovery snapped to the full
+pose on impact, held it perfectly still for 0.4s, then slid back to neutral on
+a straight line — nearly half a second of statue followed by a drift. They now
+run through a shared `_landK()` envelope: a short hold, a smoothstep release,
+and a rebound term that carries the body slightly past neutral so he pushes
+up OFF the deck instead of drifting off it. `_landPower` had been recorded by
+`startLanding` and never read; it now scales the depth, but only downward —
+the 3-point pose is FK-verified at exactly 1.0 and its `bodyY` of -0.5 is as
+low as the hips go before the torso clips through the roof, so a light step
+down barely folds and a full drop bottoms out at the authored pose. (Scaling
+depth *above* 1.0 was tried first and put him through the deck.)
