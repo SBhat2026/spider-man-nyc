@@ -92,3 +92,33 @@ over the deltoid and rounded the arm cap to match.
   whether a generated track matches the existing style — this needs either
   real audio files or explicit acceptance of unheard procedural music.
 - Mobile regression, performance capture on the target M5, release review.
+
+### Checkpoint 3 — animation weight and render cost (v145)
+
+**Flip / trick animation.** The flip spin was a smoothstep, which reads as a
+machine rotating at constant-ish speed. Replaced with anticipation → throw →
+settle: a small counter-rotation for the first 12% of the move, then a
+decelerating `1-(1-u)^2.4` through the remaining 88%. The trick poses were
+static targets held for the whole rotation; they now ride a
+`sin(pi*u)^0.7` compression envelope, so tuck actually tucks and releases and
+the open pose spreads into the arc and recovers. Verified numerically (knee
+0.19 → 2.02 → 1.33) and on an 8-frame filmstrip.
+
+**Render cost.** Profiled first rather than guessed. On this machine the loop
+is vsync-locked at 120 Hz: median frame 8.3 ms == 1000/120, with the GPU
+submission only ~2.4 ms and every CPU update summing to ~0.28 ms. A hypothesis
+that the crowd/traffic/pigeon instances were the cost was tested and killed —
+hiding them changed the render from 2.415 to 2.405 ms. Two changes that do
+hold up on slower hardware:
+
+- *Probe skipping.* A reflection-probe face is a full scene submission, the
+  single most expensive optional thing in the frame. Cadence slowed 4→12
+  (metallic suits) and 20→40 (matte), and the probe now stops re-capturing
+  entirely once a full cycle has been taken from a spot the camera has not
+  left.
+- *Adaptive resolution.* A 4-step pixel-ratio ladder driven by median frame
+  time measured against the display's own inferred interval, with hysteresis
+  and a cooldown so it cannot oscillate. Frames from a hidden/throttled tab or
+  a one-off stall (>60 ms) are discarded rather than learned from — without
+  that guard a backgrounded tab ratchets the resolution down and never
+  recovers, which is exactly what it did in testing before the guard landed.

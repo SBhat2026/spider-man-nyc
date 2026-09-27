@@ -47,6 +47,7 @@ window.GAME = {
     crowdMax: 160,
     trafficScale: 1,
     antialias: true,
+    adaptiveRes: true,   // walk render scale down if we miss the display cadence
   },
 
   // ---- Mobile / low-power profile -------------------------------------
@@ -70,6 +71,7 @@ window.GAME = {
     crowdMax: 45,
     trafficScale: 0.35,
     antialias: false,
+    adaptiveRes: true,
   },
 
   PHYS: {

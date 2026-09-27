@@ -910,16 +910,31 @@
         if (poseName === 'spread') { Object.assign(t, POSE.airSpread); return t; }
         if (poseName === 'swan') { Object.assign(t, POSE.swan); return t; }
         if (poseName === 'superman') { Object.assign(t, POSE.superman); return t; }
+        // Compression envelope. The trick pose used to be a CONSTANT, so a
+        // tuck flip stayed balled up from launch all the way to the floor.
+        // A real somersault extends, pulls tight to spin up, then opens out
+        // to spot the landing — so drive the pose by the rotation phase.
+        const dly = cfg.delay || 0;
+        const u = this._flipT <= dly ? 0 : Math.min(1, (this._flipT - dly) / (1 - dly));
+        const shape = Math.pow(Math.sin(Math.PI * u), 0.7);   // 0 → 1 → 0
         if (poseName === 'tuck') {
-          // tuck flip — knees apart, arms wide of the torso (no self-clipping)
-          t.hipRx = -1.65; t.hipLx = -1.65; t.kneeRx = 2.05; t.kneeLx = 2.05;
-          t.hipRz = -0.16; t.hipLz = 0.16;
-          t.shRx = -1.05; t.shLx = -1.05; t.shRz = -0.85; t.shLz = 0.85;
-          t.elRx = -1.55; t.elLx = -1.55; t.spineX = 0.55; t.headX = -0.5;
+          // knees apart and arms wide of the torso so nothing self-clips
+          const k = 0.32 + 0.68 * shape;
+          t.hipRx = -1.65 * k; t.hipLx = -1.65 * k;
+          t.kneeRx = 2.05 * k; t.kneeLx = 2.05 * k;
+          t.hipRz = -0.16 * k; t.hipLz = 0.16 * k;
+          t.shRx = -1.05 * k; t.shLx = -1.05 * k;
+          t.shRz = -0.85 * k; t.shLz = 0.85 * k;
+          t.elRx = -1.55 * k; t.elLx = -1.55 * k;
+          t.spineX = 0.55 * k; t.headX = -0.5 * k;
         } else {
-          // layout twist
-          t.shRz = -2.4; t.shLz = 2.4; t.shRx = -0.2; t.shLx = -0.2;
-          t.hipRx = -0.15; t.hipLx = -0.15; t.kneeRx = 0.1; t.kneeLx = 0.1;
+          // layout twist — arms sweep IN to drive the spin, then open to land
+          const rz = -2.4 + 1.72 * shape;
+          t.shRz = rz; t.shLz = -rz;
+          t.shRx = -0.2 - 0.35 * shape; t.shLx = -0.2 - 0.35 * shape;
+          t.elRx = -0.1 - 0.9 * shape; t.elLx = -0.1 - 0.9 * shape;
+          t.hipRx = -0.15 - 0.3 * shape; t.hipLx = -0.15 - 0.3 * shape;
+          t.kneeRx = 0.1 + 0.45 * shape; t.kneeLx = 0.1 + 0.45 * shape;
           t.spineX = -0.2; t.headX = -0.2;
         }
         return t;
@@ -1220,7 +1235,15 @@
       // Rotations below are the TOTAL angle-so-far, re-applied on the fresh
       // base every frame. At progress 1 the angle is 2π ≡ 0, so the body lands
       // exactly back on its base orientation.
-      const spin = (x) => x * x * (3 - 2 * x);   // ease in/out — anticipation + settle
+      // Flip timing. Smoothstep was symmetric — the flip started AND ended
+      // slow, which is the opposite of how tumbling works: you throw hard
+      // into the rotation and decelerate as you open out to spot the floor.
+      // Small wind-back, hard throw, long settle.
+      const spin = (x) => {
+        if (x < 0.12) return -0.05 * Math.sin(x / 0.12 * Math.PI);   // anticipation
+        const u = (x - 0.12) / 0.88;
+        return 1 - Math.pow(1 - u, 2.4);                              // throw + settle
+      };
 
       // forward shoulder-roll during a rolling landing
       if (this._rollT !== undefined && this._rollT < 1 && this.landTimer > 0) {

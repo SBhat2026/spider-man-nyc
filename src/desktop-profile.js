@@ -8,6 +8,9 @@
   GAME.FEATURES.combat = !q.has('combat') || !['0', 'false'].includes(q.get('combat'));
   Object.assign(GAME.GFX, { shadowMap: GAME.quality === 'high' ? 4096 : 2048,
     pixelRatio: GAME.quality === 'high' ? 2 : 1.5, envMapSize: 128,
+    // a probe face costs a full scene submission; the city reflection does not
+    // change fast enough to justify 15 of them a second
+    envMapEvery: 12, envMapEveryMatte: 40, adaptiveRes: true,
     crowdMax: 420, pigeonFlocks: 16, cityDrawDist: 5600 });
   Object.assign(GAME.CAM, { dist: 5.8, height: 1.25, fov: 64, rollMax: 0.075 });
   Object.assign(GAME.LIGHT.sunset, {

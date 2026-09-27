@@ -858,6 +858,48 @@
   try { Object.assign(stats, JSON.parse(localStorage.getItem('spidey.stats.v1')) || {}); } catch (err) {}
   GAME.stats = stats;
   let statT = 0, curAir = 0;
+  const _probeAt = new THREE.Vector3(1e9, 1e9, 1e9);
+  let _probeSettle = 0;
+
+  // ---- adaptive resolution -------------------------------------------
+  // Frame cost is dominated by fragments, so the cheapest lever that keeps
+  // every visual feature intact is the render scale. Watch a rolling median
+  // of real frame times and walk the pixel ratio down a ladder when we're
+  // missing the display's cadence, back up when there's comfortable room.
+  // Hysteresis + a cooldown stop it oscillating, and it never exceeds the
+  // ratio the device profile asked for.
+  const _ft = [];
+  let _ratioStep = 0, _adaptCd = 2.5, _lastFrameT = perf();
+  const RATIO_LADDER = [1, 0.85, 0.72, 0.6];
+  function adaptResolution(rawDt) {
+    if (!GAME.GFX.adaptiveRes) return;
+    // A backgrounded or unfocused tab gets its rAF throttled to a few hertz,
+    // and alt-tabbing / GC pauses show up as one-off spikes. Neither is the
+    // renderer being slow, and feeding them in would ratchet the resolution
+    // down permanently. Drop the window instead of learning from it.
+    if (document.hidden || rawDt > 0.06) { _ft.length = 0; _adaptCd = 1.0; return; }
+    _ft.push(rawDt * 1000);
+    if (_ft.length > 90) _ft.shift();
+    _adaptCd -= rawDt;
+    if (_adaptCd > 0 || _ft.length < 60) return;
+    const a = _ft.slice().sort((x, y) => x - y);
+    const med = a[a.length >> 1];
+    // the display's own interval, inferred from the best frames we've seen
+    const floorMs = a[Math.floor(a.length * 0.1)];
+    const base = GAME.GFX.pixelRatio || 1.5;
+    let step = _ratioStep;
+    if (med > floorMs * 1.45 && step < RATIO_LADDER.length - 1) step++;
+    else if (med < floorMs * 1.12 && step > 0) step--;
+    if (step !== _ratioStep) {
+      _ratioStep = step;
+      const want = Math.min(window.devicePixelRatio || 1, base * RATIO_LADDER[step]);
+      renderer.setPixelRatio(want);
+      if (presentation) presentation.resize();
+      GAME.renderScale = RATIO_LADDER[step];
+      _ft.length = 0;
+      _adaptCd = 3.0;
+    } else _adaptCd = 1.0;
+  }
   // dynamic-HUD state: hudQuiet 0..1 fades the chrome out at speed; zoneHoldT
   // forces it back on for a few seconds when a new district is entered
   let hudQuiet = 0, zoneHoldT = 0;
@@ -1014,15 +1056,27 @@
       GAME.minimap.update(dt, player.pos.x, player.pos.z, camYaw + Math.PI);
     }
     updateCamera(dt);
+    adaptResolution(rawDt);
 
-    // refresh reflection probe one cube face at a time (hide hero to avoid
-    // self-capture); matte suits barely show reflections, so tick them slower
+    // Refresh the reflection probe one cube face at a time (hide the hero to
+    // avoid self-capture); matte suits barely show reflections, so they tick
+    // slower. A probe face is a FULL scene submission — measured at the same
+    // cost as the visible frame — so it's the single most expensive optional
+    // thing in the loop. It's also the most skippable: a city reflection
+    // barely changes between frames, and not at all when you're standing
+    // still. Skip entirely while the camera is essentially parked.
     const metallic = (GAME.SKINS[GAME.settings.skin] || {}).torsoMetal;
     const envEvery = metallic ? GAME.GFX.envMapEvery : (GAME.GFX.envMapEveryMatte || 20);
     if (frame % envEvery === 1) {
-      hero.root.visible = false;
-      updateProbeFace();
-      hero.root.visible = true;
+      const moved = camera.position.distanceToSquared(_probeAt);
+      // once a full cycle has been captured from this spot, stop re-capturing
+      if (moved > 4 || _probeSettle < 6) {
+        if (moved > 4) { _probeAt.copy(camera.position); _probeSettle = 0; }
+        else _probeSettle++;
+        hero.root.visible = false;
+        updateProbeFace();
+        hero.root.visible = true;
+      }
     }
 
     // Draw distance rides the fog: nothing beyond full fog is visible, so
