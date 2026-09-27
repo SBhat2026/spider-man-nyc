@@ -45,6 +45,7 @@
   // eyes, which are authored in absolute head coordinates), scale head AND
   // eyes together about the neck-top pivot so they stay registered.
   const HEAD_PIVOT=0.700, HEAD_K=0.885;
+  GAME.DESKTOP_HEAD={pivot:HEAD_PIVOT,k:HEAD_K};
   const shrinkHead=(g)=>{g.translate(0,-HEAD_PIVOT,0);g.scale(HEAD_K,HEAD_K,HEAD_K);g.translate(0,HEAD_PIVOT,0);return g;};
   GAME.buildDesktopParts=function(){
     const p=[],add=(geo,slot,lock,chain)=>p.push({geo,slot,lock,chain});

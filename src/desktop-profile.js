@@ -8,7 +8,7 @@
   GAME.FEATURES.combat = !q.has('combat') || !['0', 'false'].includes(q.get('combat'));
   Object.assign(GAME.GFX, { shadowMap: GAME.quality === 'high' ? 4096 : 2048,
     pixelRatio: GAME.quality === 'high' ? 2 : 1.5, envMapSize: 128,
-    crowdMax: 210, pigeonFlocks: 16, cityDrawDist: 5600 });
+    crowdMax: 420, pigeonFlocks: 16, cityDrawDist: 5600 });
   Object.assign(GAME.CAM, { dist: 5.8, height: 1.25, fov: 64, rollMax: 0.075 });
   Object.assign(GAME.LIGHT.sunset, {
     sunElevation: 15 * Math.PI / 180, sunColor: 0xffc68b, sunIntensity: 2.05,

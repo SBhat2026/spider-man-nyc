@@ -7,7 +7,7 @@
       this.boxes=[];this.metals=[];this.posts=[];this.solids=[];this.lights=[];this.screens=[];
       this.stone=new THREE.MeshStandardMaterial({color:0xa19e95,roughness:.85});
       this.metal=new THREE.MeshStandardMaterial({color:0x3e474b,roughness:.56,metalness:.6});
-      this._towers();this._facadeDetails();this._posters();this._timesSquare();this._timesSquareScreens();this._easterEggs();
+      this._towers();this._facadeDetails();this._posters();this._timesSquare();this._timesSquareScreens();this._easterEggs();this._spooder();
       this._instances(this.boxes,new THREE.BoxGeometry(1,1,1),this.stone);
       this._instances(this.metals,new THREE.BoxGeometry(1,1,1),this.metal);
       this._instances(this.posts,new THREE.CylinderGeometry(1,1,1,8),this.metal);
@@ -146,6 +146,88 @@
       };
       this.screenCount=build(true)+build(false);
     }
+    // ---- SECRET: "spooder man" -----------------------------------------
+    // The badly-drawn meme, hidden on one rooftop with no marker and no clue
+    // in the menu. Everything about him is deliberately wrong: the eyes are
+    // different sizes and heights, the webbing is hand-wobbled rather than
+    // radial, one arm is longer, and he is flat-shaded while the rest of the
+    // city is physically lit. He should look like he was pasted in.
+    _spooder(){
+      const p=this.lm.ll(40.7466,-73.9830);            // a nobody rooftop off 6th
+      const B=this.city.bounds;
+      if(p.x<B.minX||p.x>B.maxX||p.z<B.minZ||p.z>B.maxZ)return;
+      const b=this.lm._near(p,220,b=>b.h>34&&b.h<130);if(!b)return;
+      const top=b.h;
+      // Roofs are cluttered with bulkheads, water towers and AC units, and the
+      // bare centroid buried him behind one. Spiral out for a clear patch.
+      let cx=(b.bx0+b.bx1)/2, cz=(b.bz0+b.bz1)/2;
+      const clear=(x,z)=>!this.city.isSolid(x,top+1.1,z)&&!this.city.isSolid(x,top+2.0,z);
+      if(!clear(cx,cz)){
+        let found=false;
+        for(let r=2.5;r<=14&&!found;r+=2.5){
+          for(let a=0;a<6.283&&!found;a+=0.52){
+            const x=cx+Math.cos(a)*r,z=cz+Math.sin(a)*r;
+            // stay on the roof, not off the parapet
+            if(x<b.bx0+2||x>b.bx1-2||z<b.bz0+2||z>b.bz1-2)continue;
+            if(clear(x,z)){cx=x;cz=z;found=true;}
+          }
+        }
+      }
+
+      // crude paint-program skin
+      const cv=document.createElement('canvas');cv.width=cv.height=256;
+      const c=cv.getContext('2d');
+      c.fillStyle='#d32b2b';c.fillRect(0,0,256,256);
+      c.fillStyle='#2b3ea8';c.fillRect(0,168,256,88);   // pants, drawn too high
+      c.strokeStyle='#111';c.lineWidth=3;c.lineJoin='round';
+      // wobbly "webbing" — freehand, not radial
+      for(let i=0;i<7;i++){
+        c.beginPath();
+        for(let x=0;x<=256;x+=32)c.lineTo(x, 20+i*22 + Math.sin(x*0.11+i)*7);
+        c.stroke();
+      }
+      for(let i=0;i<7;i++){
+        c.beginPath();
+        for(let y=0;y<=170;y+=28)c.lineTo(18+i*36 + Math.cos(y*0.09+i)*8, y);
+        c.stroke();
+      }
+      const tex=new THREE.CanvasTexture(cv);tex.encoding=THREE.sRGBEncoding;
+
+      const g=new THREE.Group();
+      const flat=(m)=>new THREE.MeshBasicMaterial(m);      // unlit, on purpose
+      const bodyMat=flat({map:tex});
+      const torso=new THREE.Mesh(new THREE.CapsuleGeometry(.32,.62,3,10),bodyMat);
+      torso.position.y=1.16;g.add(torso);
+      const head=new THREE.Mesh(new THREE.SphereGeometry(.33,12,10),flat({color:0xd32b2b}));
+      head.scale.set(1.14,.94,1);head.position.y=1.86;g.add(head);
+      // mismatched eyes: different size, different height, one tilted
+      const eyeMat=flat({color:0xffffff});
+      const e1=new THREE.Mesh(new THREE.CircleGeometry(.135,14),eyeMat);
+      e1.position.set(-.13,1.92,.305);e1.rotation.z=.22;g.add(e1);
+      const e2=new THREE.Mesh(new THREE.CircleGeometry(.088,12),eyeMat);
+      e2.position.set(.15,1.86,.30);e2.rotation.z=-.5;g.add(e2);
+      const pupil=flat({color:0x111111});
+      const p1=new THREE.Mesh(new THREE.CircleGeometry(.05,10),pupil);p1.position.set(-.11,1.93,.315);g.add(p1);
+      const p2=new THREE.Mesh(new THREE.CircleGeometry(.032,10),pupil);p2.position.set(.17,1.85,.311);g.add(p2);
+      // stubby limbs, one arm visibly longer
+      const limb=(x,y,len,rot,mat)=>{
+        const m=new THREE.Mesh(new THREE.CapsuleGeometry(.10,len,3,8),mat);
+        m.position.set(x,y,0);m.rotation.z=rot;g.add(m);
+      };
+      limb(-.46,1.30,.62,.55,flat({color:0xd32b2b}));
+      limb(.46,1.24,.90,-.75,flat({color:0xd32b2b}));     // too long
+      limb(-.17,.44,.62,.05,flat({color:0x2b3ea8}));
+      limb(.19,.44,.56,-.04,flat({color:0x2b3ea8}));
+
+      g.position.set(cx,top,cz);
+      g.rotation.y=Math.random()*Math.PI*2;
+      g.scale.setScalar(.92);
+      this.group.add(g);
+      this.spooder=g;
+
+      this.lm.eggs.push({id:'spooder',x:cx,z:cz,r:14,
+        label:'spooder man',icon:'#d32b2b'});
+    }
     _easterEggs(){
       const spots=[
         [40.7488,-73.9904,'feast','F.E.A.S.T.','A neighborhood that cares',0xd58b48],
@@ -169,6 +251,9 @@
       }
     }
     update(dt,player,rig){
+      if(this.spooder){this._spT=(this._spT||0)+dt;
+        this.spooder.rotation.z=Math.sin(this._spT*1.7)*.045;
+        this.spooder.position.y=this.spooder.position.y; }
       // screens are dim in daylight and blaze at dusk/night
       const glow=.22+Math.min(1.35,rig.windowGlow)*1.25;
       for(const m of this.screens)m.emissiveIntensity=glow;

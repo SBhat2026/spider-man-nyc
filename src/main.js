@@ -843,7 +843,7 @@
       player.vel.set(_en.x * sgn * speed, player.vel.y, _en.z * sgn * speed);
       player.anchor = null; player.mode = 'air';
       if (GAME.wrapShift) GAME.wrapShift(player.pos.x - oldx, player.pos.z - oldz);
-      if (GAME.comicFX) GAME.comicFX.pop('BAMF', player.pos, 'bamf', 7);
+      if (GAME.comicFX) GAME.comicFX.pop('*', player.pos, 'bamf', 7);
       if (GAME.audio && GAME.audio.thwip) GAME.audio.thwip();
       if (GAME.camFx) GAME.camFx.pulse = Math.max(GAME.camFx.pulse, 0.6);
       _portalCd = 0.8;
@@ -936,11 +936,11 @@
       // comic sound-effect bubbles — Noir suit only
       if (GAME.settings.skin === 'noir' && GAME.comicFX) {
         const fx = GAME.comicFX; _fxPos.copy(player.pos); _fxPos.y += 1.5;
-        if (player.mode === 'swing' && !wasSwing) fx.pop('THWIP!', _fxPos, 'thwip', 5);
+        if (player.mode === 'swing' && !wasSwing) fx.pop('*', _fxPos, 'thwip', 5);
         else if (wasSwing && player.mode === 'air' && player.vel.length() > 22)
-          fx.pop('WHOOSH', _fxPos, 'whoosh', 6);
-        if (player.justLanded && (player.lastImpact || 0) > 14) fx.pop('THWAK', _fxPos, 'thwak', 5.5);
-        if (player.wallBounced) fx.pop('KRAK', _fxPos, 'krak', 5.5);
+          fx.pop('*', _fxPos, 'whoosh', 6);
+        if (player.justLanded && (player.lastImpact || 0) > 14) fx.pop('*', _fxPos, 'thwak', 5.5);
+        if (player.wallBounced) fx.pop('*', _fxPos, 'krak', 5.5);
       }
       if (player.wallBounced) player.wallBounced = false;
       // Miles: Venom Blast shockwave on a hard landing

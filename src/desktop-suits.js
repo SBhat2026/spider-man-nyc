@@ -106,6 +106,40 @@
   const setSkin=GAME.Hero.prototype.setSkin;
   GAME.Hero.prototype.setSkin=function(name){
     setSkin.call(this,name);this.skinName=name;
+    // The fedora is parented to the neckHead BONE and was authored against the
+    // pre-shrink head, so after desktop-model rescales the skull the hat no
+    // longer fits. Don't recompute it from constants — the first attempt did
+    // that and assumed the bone sat at 0.64 when it is actually at 0.54, which
+    // parked the brim at eye level. MEASURE the skull and fit to it.
+    if(this.fedora&&!this.fedora.userData.desktopFit){
+      const mask=(this.slots.mask||[])[0];
+      if(mask&&mask.geometry){
+        const f=this.fedora;
+        mask.geometry.computeBoundingBox();
+        const hb=mask.geometry.boundingBox;              // body space
+        const headTop=hb.max.y, headR=Math.max(hb.max.x,hb.max.z);
+        // where the bone sits inside the body, measured not assumed
+        const bone=this.bones.neckHead;
+        this.body.updateMatrixWorld(true);
+        const bw=new THREE.Vector3(),yw=new THREE.Vector3();
+        bone.getWorldPosition(bw); this.body.getWorldPosition(yw);
+        const boneBodyY=bw.y-yw.y;
+        // fedora extents in its own local space, before its scale
+        const fb=new THREE.Box3();
+        f.children.forEach(ch=>{ch.geometry.computeBoundingBox();
+          const b=ch.geometry.boundingBox.clone().applyMatrix4(ch.matrix);fb.union(b);});
+        const brimR=Math.max(fb.max.x,Math.abs(fb.min.x))||1;
+        // Brim a little wider than the head, and the crown SQUASHED: at
+        // uniform scale the crown stood 56% of the head's height, which read
+        // as a top hat perched above the skull rather than a fedora on it.
+        const k=(headR*1.62)/brimR, ky=k*0.60;
+        f.scale.set(k,ky,k);
+        f.rotation.x=-0.05;
+        // seat the brim down at the temples, not balanced on the crown
+        f.position.set(0,(headTop-0.078)-fb.min.y*ky-boneBodyY,0.010);
+        f.userData.desktopFit=true;
+      }
+    }
     const maps=GAME.desktopSuitMaps(name);
     for(const slot of ['torso','mask','sleeves'])for(const mesh of this.slots[slot]||[]){mesh.material.map=maps[slot];mesh.material.color.setHex(0xffffff);}
     for(const slot of ['torso','mask','sleeves','primary','secondary','accent'])for(const mesh of this.slots[slot]||[]){

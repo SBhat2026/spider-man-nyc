@@ -131,7 +131,7 @@
         this.i++;
         if (GAME.camFx) GAME.camFx.pulse = Math.max(GAME.camFx.pulse, 0.5);
         if (GAME.comicFX && GAME.settings.skin === 'noir')
-          GAME.comicFX.pop('ZIP!', this.ring.position, 'whoosh', 5);
+          GAME.comicFX.pop('*', this.ring.position, 'whoosh', 5);
         if (this.i >= this.points.length) this.stop(true);
         else {
           this._show();

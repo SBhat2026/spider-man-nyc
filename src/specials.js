@@ -242,7 +242,7 @@
             player.anchor = null;
             net.cd = 0.35;
             if (GAME.camFx) GAME.camFx.pulse = Math.max(GAME.camFx.pulse, 0.45);
-            if (GAME.comicFX && GAME.settings.skin === 'noir') GAME.comicFX.pop('BOING', net.pos, 'bamf', 6);
+            if (GAME.comicFX && GAME.settings.skin === 'noir') GAME.comicFX.pop('*', net.pos, 'bamf', 6);
           }
         }
       }

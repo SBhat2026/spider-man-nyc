@@ -9,17 +9,27 @@
     const pants=new THREE.MeshStandardMaterial({color:0x20232b,roughness:.9});
     const skin=new THREE.MeshStandardMaterial({color:brute?0x9e7159:0x91684e,roughness:.85});
     function mesh(g,m,x,y,z){const a=new THREE.Mesh(g,m);a.position.set(x,y,z);a.castShadow=true;body.add(a);return a;}
-    mesh(new THREE.CylinderGeometry(.23,.19,.67,10),jacket,0,1.1,0);
-    mesh(new THREE.SphereGeometry(.19,12,10),skin,0,1.62,.01);
-    mesh(new THREE.SphereGeometry(.196,12,8,0,Math.PI*2,0,1.2),pants,0,1.64,.01);
+    // Built to the same fidelity as the street crowd — enemies are meant to
+    // read as ordinary New Yorkers, so a cruder mesh than the pedestrians
+    // standing next to them gave the fight away before it started.
+    const tors=new THREE.CylinderGeometry(.225,.175,.60,14,1);tors.scale(1,1,.74);
+    mesh(tors,jacket,0,1.13,0);
+    const yoke=new THREE.CylinderGeometry(.238,.225,.11,14,1);yoke.scale(1,1,.74);
+    mesh(yoke,jacket,0,1.38,0);
+    mesh(new THREE.CylinderGeometry(.05,.062,.09,10),skin,0,1.49,.005);   // neck
+    mesh(new THREE.SphereGeometry(.185,18,14),skin,0,1.63,.01);
+    mesh(new THREE.SphereGeometry(.192,16,10,0,Math.PI*2,0,1.15),pants,0,1.65,.005); // hair
     const limbs=[];
     for(const side of [-1,1]){
       for(const arm of [true,false]){
-        const pivot=new THREE.Group();pivot.position.set(side*(arm?.28:.13),arm?1.35:.78,0);body.add(pivot);
-        const segment=new THREE.Mesh(new THREE.CylinderGeometry(arm?.08:.1,arm?.067:.085,arm?.6:.7,8),arm?jacket:pants);
-        segment.position.y=arm?-.29:-.35;pivot.add(segment);segment.castShadow=true;
-        const tip=new THREE.Mesh(new THREE.SphereGeometry(arm?.085:.11,8,6),arm?skin:pants);
-        tip.position.set(0,arm?-.6:-.71,arm?0:.07);pivot.add(tip);limbs.push(pivot);
+        const pivot=new THREE.Group();pivot.position.set(side*(arm?.275:.115),arm?1.35:.80,0);body.add(pivot);
+        const seg=new THREE.Mesh(new THREE.CylinderGeometry(arm?.072:.098,arm?.056:.075,arm?.58:.68,10,1),arm?jacket:pants);
+        seg.position.y=arm?-.29:-.34;pivot.add(seg);seg.castShadow=true;
+        // forearm / shin as a second tapered section so limbs aren't one tube
+        const lower=new THREE.Mesh(new THREE.CylinderGeometry(arm?.056:.075,arm?.046:.062,arm?.30:.34,10,1),arm?jacket:pants);
+        lower.position.y=arm?-.70:-.83;pivot.add(lower);lower.castShadow=true;
+        const tip=new THREE.Mesh(arm?new THREE.SphereGeometry(.058,10,8):new THREE.BoxGeometry(.115,.06,.19),arm?skin:pants);
+        tip.position.set(0,arm?-.87:-1.01,arm?0:.05);pivot.add(tip);limbs.push(pivot);
       }
     }
     if(brute)root.scale.setScalar(1.17);
@@ -66,7 +76,7 @@
     say(s){if(GAME.notify)GAME.notify(s,3500);this.message=s;this.messageT=3.5;}
     _spawn(inc){
       inc.spawned=true;
-      for(let i=0;i<4;i++){
+      for(let i=0;i<6;i++){
         const along=(i-1.5)*3.2,side=(i%2?1:-1)*2;
         const pos=new V(inc.x+inc.dx*along-inc.dz*side,.28,inc.z+inc.dz*along+inc.dx*side);
         if(this.city.isSolid(pos.x,1,pos.z))continue;

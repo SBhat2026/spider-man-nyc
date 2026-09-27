@@ -122,6 +122,8 @@
         if (GAME.notify) GAME.notify('Fisk Tower — the penthouse light is always on', 6000);
       } else if (id === 'blot') {
         if (GAME.notify) GAME.notify('A hole in reality — the Spot has been here', 6000);
+      } else if (id === 'spooder') {
+        if (GAME.notify) GAME.notify('spooder man  \u2014  he has been here the whole time', 7000);
       } else if (id === 'sandsite') {
         if (GAME.notify) GAME.notify('The dig site — the sand still shifts when you look away', 6000);
       } else if (id.startsWith('graffiti')) {

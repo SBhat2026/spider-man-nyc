@@ -19,6 +19,21 @@
   };
   const INK = '#0d0d0d';
 
+  // A single fixed word per event made the panel feel like a UI label rather
+  // than comic lettering. Each event now draws from a pool; the textures are
+  // cached per word+style so the extra variety costs nothing after warm-up.
+  const WORDS = {
+    thwip:  ['THWIP!', 'THWIPP!', 'SNKT!', 'FWIP!', 'THWIK!'],
+    whoosh: ['WHOOSH', 'SWOOSH', 'FWOOSH', 'VWOOM', 'SHOOM'],
+    thwak:  ['THWAK', 'WHAM!', 'KRUNCH', 'POW!', 'WHUMP'],
+    krak:   ['KRAK', 'KRAKK!', 'CRUNCH', 'SPLAK', 'WHAK!'],
+    bamf:   ['BAMF', 'FWOMP', 'POOF!', 'VWIP', 'BLIP!'],
+  };
+  GAME.comicWord = (style) => {
+    const list = WORDS[style] || WORDS.thwip;
+    return list[(Math.random() * list.length) | 0];
+  };
+
   // largest font (px) whose rendered word fits inside a box of maxW × maxH
   function fitFont(c, word, maxW, maxH) {
     let fs = maxH;
@@ -100,9 +115,26 @@
       if (alive >= 2) return;
       this._gap = 0.4;
       const slot = this.sprites[this._i = (this._i + 1) % POOL];
-      slot.sp.material.map = this.tex(word, style || 'thwip');
+      const st = style || 'thwip';
+      // '*' asks for a random word of this style
+      const w = (word === '*' || !word) ? GAME.comicWord(st) : word;
+      slot.sp.material.map = this.tex(w, st);
       slot.sp.material.needsUpdate = true;
       slot.sp.position.copy(worldPos);
+      // Bubbles spawned at the player sat almost on the lens: they blew past
+      // the frame edges and clipped on the near plane. Shove each one a few
+      // metres FURTHER from the camera along the view ray, and lift it, so the
+      // whole panel is actually on screen.
+      const cam = GAME.debug && GAME.debug.camera;
+      if (cam) {
+        const away = slot.sp.position.clone().sub(cam.position);
+        const d = away.length();
+        if (d < 14) {
+          away.normalize();
+          slot.sp.position.addScaledVector(away, 14 - d);
+        }
+        slot.sp.position.y += 1.1;
+      }
       slot.sp.visible = true;
       slot.t = 0; slot.scale0 = size || 5;
     }

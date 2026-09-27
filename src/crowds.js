@@ -8,8 +8,8 @@
   // instance pool — phones run a smaller crowd (see GFX.crowdMax). Read at
   // construction rather than parse time so the device profile always wins.
   const maxCrowd = () => (GAME.GFX && GAME.GFX.crowdMax) || 160;
-  const R_SPAWN = 170;      // walkers live within this radius of the player
-  const R_KILL = 210;       // recycled past this
+  const R_SPAWN = 215;      // walkers live within this radius of the player
+  const R_KILL = 255;       // recycled past this
 
   class Crowds {
     constructor(city) {
@@ -70,26 +70,36 @@
         g.translate(x, y, z);
         return shade(g, v);
       };
+      // Limbs as tapered cylinders rather than slabs. Box limbs read as a
+      // cardboard cut-out the moment a pedestrian is closer than ~10 m, and
+      // with the crowd density raised they're in frame far more often.
+      const limb = (rTop, rBot, h, x, y, z, v, rz) => {
+        const g = new THREE.CylinderGeometry(rTop, rBot, h, 8, 1);
+        g.scale(1, 1, 0.86);
+        if (rz) g.rotateZ(rz);
+        g.translate(x, y, z);
+        return shade(g, v);
+      };
       // tapered torso reads as a coat far better than a slab
-      const torso = new THREE.CylinderGeometry(0.20, 0.155, 0.54, 7, 1);
+      const torso = new THREE.CylinderGeometry(0.20, 0.155, 0.54, 12, 1);
       torso.scale(1, 1, 0.72); torso.translate(0, 1.03, 0);
       // shoulders: a slight yoke so the silhouette isn't a plain tube
-      const yoke = new THREE.CylinderGeometry(0.215, 0.20, 0.10, 7, 1);
+      const yoke = new THREE.CylinderGeometry(0.215, 0.20, 0.10, 12, 1);
       yoke.scale(1, 1, 0.72); yoke.translate(0, 1.255, 0);
 
       const body = [
         shade(torso, 1.0), shade(yoke, 0.92),
-        box(0.19, 0.16, 0.17, 0, 0.72, 0, 0.55),          // hips
-        box(0.105, 0.30, 0.115, 0.062, 0.55, 0, 0.34),    // thighs (dark trousers)
-        box(0.105, 0.30, 0.115, -0.062, 0.55, 0, 0.34),
-        box(0.095, 0.30, 0.105, 0.062, 0.24, 0, 0.30),    // shins
-        box(0.095, 0.30, 0.105, -0.062, 0.24, 0, 0.30),
-        box(0.115, 0.06, 0.17, 0.062, 0.06, 0.02, 0.16),  // shoes
+        limb(0.105, 0.095, 0.17, 0, 0.72, 0, 0.55),        // hips
+        limb(0.058, 0.050, 0.31, 0.062, 0.55, 0, 0.34),    // thighs
+        limb(0.058, 0.050, 0.31, -0.062, 0.55, 0, 0.34),
+        limb(0.049, 0.042, 0.31, 0.062, 0.24, 0, 0.30),    // shins
+        limb(0.049, 0.042, 0.31, -0.062, 0.24, 0, 0.30),
+        box(0.115, 0.06, 0.17, 0.062, 0.06, 0.02, 0.16),   // shoes
         box(0.115, 0.06, 0.17, -0.062, 0.06, 0.02, 0.16),
-        box(0.075, 0.26, 0.085, 0.235, 1.10, 0, 0.94, 0.07),   // upper arms
-        box(0.075, 0.26, 0.085, -0.235, 1.10, 0, 0.94, -0.07),
-        box(0.068, 0.24, 0.078, 0.255, 0.85, 0, 0.90),    // forearms
-        box(0.068, 0.24, 0.078, -0.255, 0.85, 0, 0.90),
+        limb(0.041, 0.034, 0.27, 0.235, 1.10, 0, 0.94, 0.07),   // upper arms
+        limb(0.041, 0.034, 0.27, -0.235, 1.10, 0, 0.94, -0.07),
+        limb(0.033, 0.028, 0.25, 0.255, 0.85, 0, 0.90),    // forearms
+        limb(0.033, 0.028, 0.25, -0.255, 0.85, 0, 0.90),
       ];
       const MAX = this.max = maxCrowd();
       this.im = new THREE.InstancedMesh(merge(body),
@@ -97,11 +107,11 @@
       this.im.frustumCulled = false;
 
       // head: rounded skull + hair cap, tinted by SKIN palette
-      const skull = new THREE.IcosahedronGeometry(0.098, 0);
+      const skull = new THREE.IcosahedronGeometry(0.098, 1);
       skull.scale(1, 1.16, 1.02); skull.translate(0, 1.40, 0);
-      const hair = new THREE.SphereGeometry(0.101, 7, 4, 0, Math.PI * 2, 0, 1.15);
+      const hair = new THREE.SphereGeometry(0.101, 12, 7, 0, Math.PI * 2, 0, 1.15);
       hair.scale(1, 1.12, 1.04); hair.translate(0, 1.415, -0.004);
-      const neck = new THREE.CylinderGeometry(0.042, 0.05, 0.07, 5);
+      const neck = new THREE.CylinderGeometry(0.042, 0.05, 0.07, 8);
       neck.translate(0, 1.30, 0);
       this.imHead = new THREE.InstancedMesh(
         merge([shade(skull, 1.0), shade(hair, 0.30), shade(neck, 0.86)]),
